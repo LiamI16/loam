@@ -42,21 +42,27 @@ files; remove the `packages/.gitkeep` when `packages/core` is added.
 
 ---
 
-## Stage 2 — `@loam/core` foundations (1 focused session)
+## Stage 2 — `@loam/core` foundations ✅
 
-- [ ] `packages/core/` scaffolded with `tsup` (build) + `vitest` (test)
-- [ ] Implement `splitmix64` (one 64-bit input → one 64-bit output)
-- [ ] Implement `pcg32` stream PRNG
-- [ ] Implement `Seed` class with `.child(label)` derivation
-- [ ] Implement `Rng` wrapper API per `docs/seed-format.md` §2
-- [ ] **Determinism contract test**: a fixed seed produces a known
-      sequence of N integers. This test is the project's seed-determinism
-      guarantee — never delete, never relax.
-- [ ] Stub out event-protocol types from `docs/event-protocol.md` §1
-- [ ] `packages/core` builds, tests pass in CI
+- [x] `packages/core/` scaffolded with `tsup` (build) + `vitest` (test) +
+      `typescript`
+- [x] Implement `splitmix64` (`src/rng/splitmix64.ts`)
+- [x] Implement `Pcg32` stream PRNG (`src/rng/pcg32.ts`)
+- [x] Implement `hash64String` (FNV-1a) for label hashing (`src/rng/hash64.ts`)
+- [x] Implement `Seed` class with `.child(label)` derivation (`src/rng/seed.ts`)
+- [x] Implement `Rng` wrapper API per `docs/seed-format.md` §2 (`src/rng/rng.ts`)
+- [x] **Determinism contract test** — 6 tests covering: same seed → same
+      sequence, different seeds diverge, child labels diverge, same label
+      reproduces, sibling-order independence, and a hard-coded known
+      sequence for `Seed.from(42n)`. Never relax.
+- [x] Event-protocol type stubs (`src/events.ts`) — `NoteEvent` / `ParamEvent` /
+      `TickEvent` per `docs/event-protocol.md`
+- [x] `packages/core` builds (`tsup` ESM + DTS), all tests pass, lint clean,
+      typecheck clean
+- [x] CI updated to run `build` step in addition to lint + test
 
 **Done when:** `import { Seed, Rng } from '@loam/core'` works, the
-determinism test passes, and the event-type stubs compile.
+determinism test passes, and the event-type stubs compile. ✓
 
 ---
 
