@@ -124,6 +124,17 @@ stage.addEventListener('keydown', (e) => {
   }
 });
 
+// ── stop buttons from latching focus on mouse click ───────────────
+// Default browser behavior focuses a button when you click it, which
+// means subsequent spacebar presses re-activate that button instead of
+// triggering play/pause. preventDefault on mousedown cancels the focus
+// move without affecting the click event itself; Tab keyboard
+// navigation still focuses buttons normally (different code path).
+document.addEventListener('mousedown', (e) => {
+  const t = e.target as HTMLElement | null;
+  if (t && t.tagName === 'BUTTON') e.preventDefault();
+});
+
 // ── sliders + toggles ─────────────────────────────────────────────
 $<HTMLInputElement>('vol').addEventListener('input', (e) => {
   const v = Number((e.target as HTMLInputElement).value);

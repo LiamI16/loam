@@ -2,7 +2,7 @@ import { Channels } from '../../channels.js';
 import type { EngineEvent } from '../../events.js';
 import type { Rng } from '../../rng/rng.js';
 import type { Seed } from '../../rng/seed.js';
-import type { ResolvedEmberOptions, SubScheduler } from './ember.js';
+import type { EngineState, SubScheduler } from './ember.js';
 import { CHORDS, type ChordName, PROGRESSIONS } from './progressions.js';
 
 /**
@@ -24,9 +24,9 @@ export class ChordScheduler implements SubScheduler {
 
   constructor(
     private readonly seed: Seed,
-    private readonly opts: ResolvedEmberOptions,
+    state: EngineState,
   ) {
-    this.secondsPerChord = (60 / opts.bpm) * 4 * 2; // 2 bars in 4/4
+    this.secondsPerChord = (60 / state.bpm) * 4 * 2; // 2 bars in 4/4
     this.reset();
   }
 

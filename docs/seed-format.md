@@ -159,6 +159,25 @@ the same way (code units, not UTF-8 bytes), or seeds derived from non-
 ASCII titles will differ between hashing schemes. Stick with this hash
 function for any seed-derivation path.
 
+### 7.3a Multi-layered determinism contracts (Stage 5+)
+
+As Phase 2 adds layers on top of the PRNG (value noise, fBm, soon-to-be
+Markov / attractors / L-systems), each layer gets its *own* locked-
+sequence test. Stage 5 added two:
+
+- `ValueNoise1D.sample(x)` — known floats for `Seed.from(42n)` at fixed
+  positions; locks the splitmix-on-demand gradient + Hermite smoothstep
+  formula.
+- `Fbm1D.sample(x)` — known floats summing 4 octaves with persistence
+  0.5 / lacunarity 2; locks the octave-stacking math.
+
+**Implication:** each layer's contract pins that layer specifically.
+A failing PRNG contract means the PRNG changed; a failing fBm contract
+with passing PRNG and ValueNoise contracts means the fBm summation
+changed; etc. Diagnosing regressions is fast. Every layer-locked test
+is also a v2-seed-format breaker if intentionally changed — they're
+the project's compatibility contract surface.
+
 ### 7.3 Derived methods aren't separately contract-locked
 
 The determinism test pins the `uint32` sequence emitted by `Rng.next()`.

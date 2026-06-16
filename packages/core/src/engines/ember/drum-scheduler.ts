@@ -2,7 +2,7 @@ import { Channels } from '../../channels.js';
 import type { EngineEvent } from '../../events.js';
 import type { Rng } from '../../rng/rng.js';
 import type { Seed } from '../../rng/seed.js';
-import type { ResolvedEmberOptions, SubScheduler } from './ember.js';
+import type { EngineState, SubScheduler } from './ember.js';
 
 /** 16-step boom-bap kick pattern (per prototype). */
 const KICK_SEQ: ReadonlyArray<0 | 1> = [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0];
@@ -25,9 +25,9 @@ export class DrumScheduler implements SubScheduler {
 
   constructor(
     private readonly seed: Seed,
-    private readonly opts: ResolvedEmberOptions,
+    state: EngineState,
   ) {
-    this.secondsPerStep = 60 / opts.bpm / 4; // sixteenth note
+    this.secondsPerStep = 60 / state.bpm / 4; // sixteenth note
     this.reset();
   }
 

@@ -4,7 +4,7 @@ export { DrumScheduler } from './drum-scheduler.js';
 export {
   EmberEngine,
   type EmberOptions,
-  type ResolvedEmberOptions,
+  type EngineState,
   type SubScheduler,
 } from './ember.js';
 export { MelodyScheduler } from './melody-scheduler.js';

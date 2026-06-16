@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Channels, DrumScheduler, Seed } from '../src/index.js';
+import { makeState } from './_helpers.js';
 
-const OPTS = { bpm: 60, density: 0.18, vinylEnabled: true }; // 60 BPM → 0.25 s / 16th
+const OPTS = makeState({ bpm: 60 }); // 60 BPM → 0.25 s / 16th
 const SECONDS_PER_STEP = 0.25;
 
 describe('DrumScheduler', () => {

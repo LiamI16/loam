@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Channels, ChordScheduler, PROGRESSIONS, Seed } from '../src/index.js';
+import { makeState } from './_helpers.js';
 
-const OPTS = { bpm: 74, density: 0.18, vinylEnabled: true };
+const OPTS = makeState();
 const SECONDS_PER_CHORD = (60 / 74) * 4 * 2; // 2 bars in 4/4 at 74 BPM
 
 describe('ChordScheduler', () => {

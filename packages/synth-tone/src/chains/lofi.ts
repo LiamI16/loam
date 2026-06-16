@@ -29,12 +29,13 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
     rolloff: -12,
   }).connect(adapter.master);
   const reverb = new Tone.Reverb({ decay: 7, preDelay: 0.02, wet: 0.34 }).connect(warmth);
+  // Evo filter — its frequency is now driven by `ParamEvent`s from the
+  // engine (Stage 5 fBm dynamics). The static `Tone.LFO` the prototype
+  // used has been removed; the engine emits ramped cutoff updates ~4 Hz
+  // instead, giving fractal motion rather than an obvious sine sweep.
   const evoFilter = new Tone.Filter({ type: 'lowpass', frequency: 1800, rolloff: -24 }).connect(
     reverb,
   );
-  // Slow LFO sweeps the evo filter — the only thing that "moves" on its
-  // own, over ~40 s, so the listener never notices a moment happening.
-  new Tone.LFO({ frequency: 0.024, min: 1150, max: 2650 }).connect(evoFilter.frequency).start();
   const chorus = new Tone.Chorus({ frequency: 0.4, delayTime: 3.5, depth: 0.3, wet: 0.35 })
     .start()
     .connect(evoFilter);
@@ -190,6 +191,15 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
     },
     ramp: (v, t) => {
       rainVol.volume.rampTo(v, t);
+    },
+  });
+  // Engine-driven evo-filter sweep (Stage 5 — replaces the static LFO).
+  adapter.registerParam('fx.evoFilter.cutoff', {
+    set: (v) => {
+      evoFilter.frequency.value = v;
+    },
+    ramp: (v, t) => {
+      evoFilter.frequency.rampTo(v, t);
     },
   });
 }

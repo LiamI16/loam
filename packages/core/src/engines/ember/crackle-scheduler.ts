@@ -2,7 +2,7 @@ import { Channels } from '../../channels.js';
 import type { EngineEvent } from '../../events.js';
 import type { Rng } from '../../rng/rng.js';
 import type { Seed } from '../../rng/seed.js';
-import type { ResolvedEmberOptions, SubScheduler } from './ember.js';
+import type { EngineState, SubScheduler } from './ember.js';
 
 /** Per-16th probability of a vinyl crackle when `vinylEnabled` is true. */
 const CRACKLE_PROB = 0.22;
@@ -20,9 +20,9 @@ export class CrackleScheduler implements SubScheduler {
 
   constructor(
     private readonly seed: Seed,
-    private readonly opts: ResolvedEmberOptions,
+    private readonly state: EngineState,
   ) {
-    this.secondsPerStep = 60 / opts.bpm / 4;
+    this.secondsPerStep = 60 / state.bpm / 4;
     this.reset();
   }
 
@@ -35,7 +35,7 @@ export class CrackleScheduler implements SubScheduler {
     const events: EngineEvent[] = [];
     while (this.nextStep * this.secondsPerStep < to) {
       const time = this.nextStep * this.secondsPerStep;
-      if (this.opts.vinylEnabled && this.rng.bernoulli(CRACKLE_PROB)) {
+      if (this.state.vinylEnabled && this.rng.bernoulli(CRACKLE_PROB)) {
         events.push({
           kind: 'note',
           channel: Channels.BELL,

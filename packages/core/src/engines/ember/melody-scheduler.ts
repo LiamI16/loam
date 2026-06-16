@@ -2,7 +2,7 @@ import { Channels } from '../../channels.js';
 import type { EngineEvent } from '../../events.js';
 import type { Rng } from '../../rng/rng.js';
 import type { Seed } from '../../rng/seed.js';
-import type { ResolvedEmberOptions, SubScheduler } from './ember.js';
+import type { EngineState, SubScheduler } from './ember.js';
 import { PENT_MIDI } from './progressions.js';
 
 /**
@@ -21,9 +21,9 @@ export class MelodyScheduler implements SubScheduler {
 
   constructor(
     private readonly seed: Seed,
-    private readonly opts: ResolvedEmberOptions,
+    private readonly state: EngineState,
   ) {
-    this.secondsPerQuarter = 60 / opts.bpm;
+    this.secondsPerQuarter = 60 / state.bpm;
     this.reset();
   }
 
@@ -36,7 +36,11 @@ export class MelodyScheduler implements SubScheduler {
     const events: EngineEvent[] = [];
     while (this.nextQuarter * this.secondsPerQuarter < to) {
       const time = this.nextQuarter * this.secondsPerQuarter;
-      if (this.rng.bernoulli(this.opts.density)) {
+      // Density wanders — sample the fBm stream at this exact engine-time
+      // so reproducible "did the melody fire at quarter N?" decisions stay
+      // tied to a deterministic fBm trajectory.
+      const density = this.state.densityStream.evaluate(time);
+      if (this.rng.bernoulli(density)) {
         const pitch = this.rng.pick(PENT_MIDI);
         const isQuarter = this.rng.bernoulli(0.5);
         const durationMs = (isQuarter ? this.secondsPerQuarter : this.secondsPerQuarter / 2) * 1000;

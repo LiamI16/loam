@@ -316,6 +316,31 @@ If a sub-scheduler were to store the `Rng` directly and reset only its
 cursors, the Rng would carry forward and "reset" wouldn't actually
 reset — the seed-determinism contract on resets would break silently.
 
+### 9.6f Engine emits continuous-parameter `ParamEvent`s at a fixed cadence
+
+Stage 5 puts the `ParamEvent` flow to real use. `EmberEngine` samples
+its continuous parameter streams (Stage 5: `fx.evoFilter.cutoff`) at a
+fixed `PARAM_TICK_SEC = 0.25` s cadence and emits a `ParamEvent` with
+`rampMs = PARAM_TICK_SEC * 1000` so the adapter interpolates between
+samples linearly. Sub-audio rate, smooth boundary, deterministic.
+
+**Implication:** any future engine-driven knob follows this same shape
+— pick a sample rate slow enough not to flood the event stream but
+faster than the parameter's own motion timescale, set `rampMs` to the
+same value so updates merge into continuous motion. See `docs/dynamics.md`
+§5.
+
+### 9.6g `setOption` semantics depend on the stream type
+
+Stage 4: `setOption('density', 0)` set a number, melody went silent.
+Stage 5: `setOption('density', 0)` sets the *mean* of an FbmParam;
+melody fires much less but not zero (fBm motion around the mean can
+still pull above 0). The mean is a centerpoint, not a hard floor.
+
+**Implication:** if any future option needs true on/off semantics, give
+it its own boolean (like `vinylEnabled`) rather than relying on "value
+= 0." Don't conflate mean with mute. See `docs/dynamics.md` §7.
+
 ### 9.6e `Channels.BELL` is temporarily reused for vinyl crackle
 
 Stage 4's `CrackleScheduler` emits on `Channels.BELL` because the lo-fi
