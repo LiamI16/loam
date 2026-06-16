@@ -1,0 +1,26 @@
+{
+  "name": "loam",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Offline, infinite, on-device generative lo-fi music engine. Pure synthesis, seed-based procedural generation.",
+  "license": "MIT",
+  "author": "Liam Imagawa",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LiamI16/loam.git"
+  },
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "fix": "biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0"
+  }
+}
