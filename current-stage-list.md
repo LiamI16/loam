@@ -99,25 +99,86 @@ through the modular architecture. ✓
 
 ---
 
-## Stage 4 — Port the prototype's sound
+## Stage 4 — Port the prototype's sound ✅
 
-Reproduce `ember-generative-study.html` through the modular architecture,
-no new musical capability.
+**Engine:**
+- [x] `EmberEngine` + four sub-schedulers (chord, drum, melody, crackle),
+      each with its own `seed.child(label)` for independent PRNG streams
+- [x] `ChordScheduler` — 4 progressions, light random voicing, 45 %
+      progression-swap chance per cycle, pad on root + 5
+- [x] `DrumScheduler` — boom-bap kick/snare grid, closed hats every 8th,
+      ghost-hats on off-16ths
+- [x] `MelodyScheduler` — sparse pentatonic, density-gated
+- [x] `CrackleScheduler` — engine-driven vinyl pops, gated by
+      `vinylEnabled` engine option
+- [x] All randomness via seeded `Rng` (no `Math.random()` anywhere in core)
+- [x] `engine.setOption(name, value)` for live UI-driven knobs
+- [x] 23 new tests (chord/drum/melody/engine + the engine determinism
+      contract — `Seed.from(42n)` → known 6-event fingerprint)
 
-- [ ] Port the signal chain (FM Rhodes + AM pad → chorus → slow-LFO low-
-      pass → reverb → warmth filter)
-- [ ] Port the drum sequencing (kick/snare/hat 16-step patterns)
-- [ ] Port noise beds (brown bed, rain bandpass, vinyl crackle)
-- [ ] Port the chord/progression logic and the sparse pentatonic melody —
-      now using `Rng` from `@loam/core` instead of `Math.random()`
-- [ ] Port the existing UI controls (volume, warmth, density, rain, vinyl
-      toggles, ember play affordance)
-- [ ] Replace `ember-generative-study.html` in the demo path with the new
-      Vite-built version
-- [ ] Side-by-side A/B: new demo sounds substantively like the original
+**Adapter:**
+- [x] Two-node master pipeline: `master` (Tone.Volume, dB) → `out`
+      (Tone.Gain, 0/1 fade gate) → destination — fixes
+      brown-noise-during-pause bug from Stage 3
+- [x] `latestScheduledAudioTime` watermark prevents Tone "time must be ≥
+      last scheduled" errors on mid-playback reseed / BPM change
+- [x] `ChannelRegistration` now a `(trigger, releaseAll?)` callback pair
+      — supports non-pitched voices (`NoiseSynth`, `MembraneSynth`)
+- [x] `ParamSetter` callback API — adapter only deals in numbers, chain
+      wraps Tone's generic `Param<unit>` at the boundary
+- [x] Explicit `linearRampToValueAtTime` for mute gate, not Tone's
+      `rampTo` (which asymptotes and leaves noise audible)
 
-**Done when:** the new demo is at sonic parity with the HTML prototype,
-seeded determinism works end-to-end, and the original HTML is retired.
+**Chain (`buildLofiChain`):**
+- [x] FM Rhodes + AM pad → chorus → slow-LFO low-pass → reverb → warmth
+      → master, drum bus through warmth too
+- [x] Brown bed, rain, vinyl crackle — all bypass warmth, route direct
+      to master (warmth should muffle music, not atmospherics)
+- [x] Rain: pink noise through two parallel static bandpasses (low wash
+      + high sparkle), no LFO (rain isn't periodic)
+- [x] Crackle: boosted vs prototype (-8 dB / 2 kHz HP) so the toggle is
+      audibly perceivable
+
+**Web demo:**
+- [x] Breathing-ember UI, volume / warmth / density / tempo sliders,
+      rain / vinyl toggles
+- [x] Seed display + paste-to-reseed input + Roll / Copy buttons + URL
+      permalinks (`?seed=...`)
+- [x] In-place reseed and BPM change — fade out, swap engine, fade in
+      (no page reload, sliders preserved)
+- [x] Spacebar global play/pause (filtered: skips text inputs and
+      buttons; passes through sliders and the ember)
+- [x] Vite `resolve.alias` for `@loam/*` → `packages/*/src/index.ts` —
+      library edits HMR through to the demo without a `tsup` rebuild
+- [x] All packages lint / typecheck / build / test green, CI passing
+
+**Design assumptions captured:**
+- `docs/event-protocol.md` §9.6c–e — shared mutable options, sub-scheduler
+  reset re-derives Rng, `Channels.BELL` temporary alias for crackle
+- `docs/adapter.md` §8–11 — two-node master pipeline, latest-scheduled
+  watermark, channel/param callback APIs
+- `docs/stack.md` §8 — Vite alias for workspace source
+
+**Bugs surfaced and fixed mid-stage** (kept for posterity):
+- Stop fade asymptoted near 0, leaving brown noise audible — fixed by
+  the two-node master pipeline and explicit `linearRampToValueAtTime`
+- Mid-playback reseed threw Tone "time must be ≥ last scheduled" —
+  fixed by `latestScheduledAudioTime` watermark
+- Vinyl toggle initially seemed broken — actually wiring was fine, just
+  the prototype-faithful crackle level was inaudibly subtle (boosted)
+- Rain volume tied to warmth slider — fixed by routing texture beds
+  past warmth
+- Spacebar double-fired on stage focus — fixed by `stopPropagation` +
+  filter on input/textarea/button
+- Slider focus blocked spacebar — fixed by tightening filter to only
+  block text-like input types
+- `:focus-visible` ring on the ember persisted after spacebar — removed
+  ember-specific focus styling (breathing glow is the real indicator)
+- Page reload on reseed destroyed slider state — replaced with in-place
+  engine swap + `history.replaceState`
+
+**Done when:** the demo is at sonic parity with the HTML prototype,
+seeded determinism works end-to-end, and the UX feels actually-usable. ✓
 
 ---
 

@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>loam · stage 3</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>loam · ember</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='9' fill='%23e8a35a'/%3E%3C/svg%3E" />
   <style>
     :root {
       --bg: #15100d;
@@ -12,6 +13,7 @@
       --ember-dim: #7a4a23;
       --ink: #b6a596;
       --ink-faint: #6f6358;
+      --line: #2a221c;
     }
     * { box-sizing: border-box; }
     html, body { height: 100%; }
@@ -25,44 +27,245 @@
       align-items: center;
       justify-content: center;
       min-height: 100%;
+      -webkit-font-smoothing: antialiased;
       user-select: none;
-      gap: 32px;
+      overflow: hidden;
     }
-    button {
-      padding: 14px 42px;
-      background: transparent;
-      color: var(--ember);
-      border: 1px solid var(--ember);
-      border-radius: 10px;
-      font-family: inherit;
-      font-size: 12px;
+    .wrap { display: flex; flex-direction: column; align-items: center; gap: 42px; padding: 32px; }
+
+    /* ── ember: hero + play affordance ── */
+    .ember-stage {
+      position: relative;
+      width: 200px;
+      height: 200px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .ember {
+      position: absolute;
+      width: 96px;
+      height: 96px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 50% 45%, #f6c483 0%, var(--ember) 38%, var(--ember-dim) 72%, transparent 100%);
+      opacity: 0.28;
+      filter: blur(0.3px);
+      transition: opacity 1.2s ease;
+    }
+    .glow {
+      position: absolute;
+      width: 200px;
+      height: 200px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(232,163,90,0.20) 0%, transparent 62%);
+      opacity: 0.25;
+      transition: opacity 1.2s ease;
+    }
+    .ember-stage.on .ember { opacity: 0.92; animation: breathe var(--beat, 0.8s) ease-in-out infinite; }
+    .ember-stage.on .glow  { opacity: 0.85; animation: breatheGlow var(--beat, 0.8s) ease-in-out infinite; }
+    @keyframes breathe {
+      0%, 100% { transform: scale(0.94); opacity: 0.62; }
+      50%      { transform: scale(1.06); opacity: 0.98; }
+    }
+    @keyframes breatheGlow {
+      0%, 100% { transform: scale(0.9);  opacity: 0.5;  }
+      50%      { transform: scale(1.12); opacity: 0.95; }
+    }
+    /* No focus ring on the ember stage — the breathing glow already
+       indicates play state, and a persistent ring after spacebar reads
+       as a visual bug for an ambient-by-design UI. */
+    .ember-stage:focus { outline: none; }
+    .ember-stage:focus-visible { outline: none; }
+
+    .hint {
+      font-size: 11px;
       letter-spacing: 0.28em;
       text-transform: uppercase;
-      cursor: pointer;
-      transition: background 0.25s ease;
+      color: var(--ink-faint);
+      height: 14px;
     }
-    button:hover { background: rgba(232, 163, 90, 0.08); }
-    button.on { background: var(--ember); color: var(--bg); }
-    .pulse {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: var(--ember-dim);
-      transition: background 0.08s ease, transform 0.08s ease;
+
+    /* ── controls ── */
+    .panel {
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      width: 280px;
+      opacity: 0.85;
     }
-    .pulse.on { background: var(--ember); transform: scale(1.4); }
-    .hint {
+    .row { display: flex; flex-direction: column; gap: 9px; }
+    .label {
+      display: flex;
+      justify-content: space-between;
       font-size: 10px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+    }
+    .label b { color: var(--ink); font-weight: 400; }
+    input[type=range] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 2px;
+      background: var(--line);
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: var(--ember);
+      box-shadow: 0 0 8px rgba(232,163,90,0.5);
+      transition: transform 0.15s ease;
+    }
+    input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.25); }
+    input[type=range]::-moz-range-thumb {
+      width: 13px;
+      height: 13px;
+      border: none;
+      border-radius: 50%;
+      background: var(--ember);
+      box-shadow: 0 0 8px rgba(232,163,90,0.5);
+    }
+
+    .toggles { display: flex; gap: 10px; }
+    .tog {
+      flex: 1;
+      text-align: center;
+      padding: 10px 0;
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: transparent;
+      cursor: pointer;
+      transition: all 0.25s ease;
+    }
+    .tog.active {
+      color: var(--bg);
+      background: var(--ember);
+      border-color: var(--ember);
+      box-shadow: 0 0 16px rgba(232,163,90,0.25);
+    }
+
+    /* ── seed area ── */
+    .seed-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .seed-label {
+      font-size: 9px;
       letter-spacing: 0.3em;
       text-transform: uppercase;
       color: var(--ink-faint);
     }
+    .seed-input {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--ember);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 11px;
+      width: 240px;
+      text-align: center;
+      outline: none;
+    }
+    .seed-input:focus { border-color: var(--ember-dim); }
+    .seed-actions { display: flex; gap: 6px; width: 240px; }
+    .seed-btn {
+      flex: 1;
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--ink-faint);
+      padding: 5px 0;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 9px;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: color 0.2s ease, border-color 0.2s ease;
+    }
+    .seed-btn:hover { color: var(--ember); border-color: var(--ember-dim); }
+    .seed-hint {
+      font-size: 9px;
+      color: var(--ink-faint);
+      min-height: 12px; /* reserve room for transient feedback so layout doesn't jump */
+    }
+
+    .footer {
+      position: fixed;
+      bottom: 22px;
+      font-size: 9px;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      opacity: 0.7;
+    }
+    .footer span { color: var(--ember-dim); }
+
+    @media (prefers-reduced-motion: reduce) {
+      .ember-stage.on .ember, .ember-stage.on .glow { animation: none; }
+      .ember-stage.on .ember { opacity: 0.92; }
+      .ember-stage.on .glow  { opacity: 0.8; }
+    }
   </style>
 </head>
 <body>
-  <button id="play">play</button>
-  <div id="pulse" class="pulse"></div>
-  <div class="hint">stage 3 · Dm9 → Gmaj7 every 2 bars · 74 bpm</div>
+  <div class="wrap">
+    <div class="ember-stage" id="stage" role="button" tabindex="0" aria-label="Play or pause">
+      <div class="glow"></div>
+      <div class="ember"></div>
+    </div>
+    <div class="hint" id="hint">tap the ember to begin</div>
+
+    <div class="panel">
+      <div class="row">
+        <div class="label"><span>volume</span><b id="volVal">68</b></div>
+        <input id="vol" type="range" min="0" max="100" value="68" />
+      </div>
+      <div class="row">
+        <div class="label"><span>warmth</span><b id="warmVal">soft</b></div>
+        <input id="warm" type="range" min="0" max="100" value="55" />
+      </div>
+      <div class="row">
+        <div class="label"><span>density</span><b id="denVal">low</b></div>
+        <input id="den" type="range" min="0" max="100" value="32" />
+      </div>
+      <div class="row">
+        <div class="label"><span>tempo</span><b id="bpmVal">74</b></div>
+        <input id="bpm" type="range" min="60" max="100" value="74" />
+      </div>
+      <div class="toggles">
+        <button class="tog" id="rain">rain</button>
+        <button class="tog active" id="vinyl">vinyl</button>
+      </div>
+
+      <div class="seed-area">
+        <div class="seed-label">seed</div>
+        <input id="seed" class="seed-input" type="text" spellcheck="false" autocomplete="off" />
+        <div class="seed-actions">
+          <button id="roll" class="seed-btn">roll</button>
+          <button id="copy" class="seed-btn">copy</button>
+        </div>
+        <div class="seed-hint" id="seedHint">enter to reseed · space to play</div>
+      </div>
+    </div>
+  </div>
+  <div class="footer">offline · generative · <span>infinite</span></div>
+
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

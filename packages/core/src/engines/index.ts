@@ -1,1 +1,1 @@
-export { VampEngine } from './vamp.js';
+export * from './ember/index.js';

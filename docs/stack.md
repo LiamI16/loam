@@ -149,7 +149,26 @@ and build the monorepo in the same pass; one or the other.
 
 ---
 
-## 8. Open stack decisions
+## 8. Workspace dev resolution — Vite alias to `src/`
+
+By default, `apps/web-demo` imports `@loam/core` and `@loam/synth-tone`,
+which resolve to each package's `dist/index.js` per their `package.json`
+`exports`. Editing a library's `src/` doesn't reflect in the demo until
+you re-run `tsup` to rebuild `dist/`. Easy to forget; bit us in Stage 4
+when a chain edit "did nothing."
+
+Fix: `apps/web-demo/vite.config.ts` adds a `resolve.alias` mapping
+`@loam/*` directly to its `packages/*/src/index.ts`. Vite handles the TS
+natively. Library edits now HMR through to the demo immediately.
+
+**Trade-off:** the dev import path differs from the production npm-install
+path. Fine for our case (TS source compiles to similar JS), but worth
+knowing if a library ever does something odd at build time. Production
+build (`vite build`) also follows the alias — output bundles the source
+directly, skipping the published `dist/`. To test the published artifact
+shape, run from a fresh checkout or temporarily disable the alias.
+
+## 9. Open stack decisions
 
 A few minor things still to pick — none blocking:
 

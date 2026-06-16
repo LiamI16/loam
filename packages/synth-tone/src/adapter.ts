@@ -1,33 +1,63 @@
 import type { Engine, EngineEvent, NoteEvent, ParamEvent, TickEvent } from '@loam/core';
 import * as Tone from 'tone';
+import type { ChannelRegistration, ParamSetter } from './types.js';
 
 /** How far ahead of the audio clock the engine pre-schedules, in seconds. */
 const LOOKAHEAD_SEC = 0.2;
 /** How often the adapter polls the engine for the next chunk of events. */
 const TICK_INTERVAL_MS = 25;
 /** Master-bus fade-out time when stop() is called. ~10 ms is short enough
- * to feel instant and long enough to avoid an audible click. Below ~5 ms
- * starts to risk a discontinuity click depending on signal phase. The
- * absolute floor on perceived stop latency is the AudioContext's
- * `outputLatency` (hardware-dependent, typically 5–30 ms). */
+ * to feel instant and long enough to avoid an audible click. */
 const STOP_FADE_SEC = 0.01;
 
 /**
- * The single layer that talks to Tone.js. Owns a registry of named channels
- * (`PolySynth` instances), pulls events from an `Engine` via a periodic
- * scheduling loop, and dispatches them to Web Audio with sample-accurate
- * timing. See docs/event-protocol.md §3 (lookahead scheduling).
+ * The single layer that talks to Tone.js. Owns:
+ *   - A master `Gain` between everything and `Tone.Destination`. Chains
+ *     route into it; fades on stop() target it.
+ *   - A channel registry of `(trigger, releaseAll?)` callbacks supplied by
+ *     chains — works for both pitched (`PolySynth`) and non-pitched
+ *     (`NoiseSynth`, `MembraneSynth`) voices.
+ *   - A parameter registry of dotted-path → `Tone.Param` mappings. UI
+ *     sliders and engine `ParamEvent`s both flow through `setParam(...)`.
+ *
+ * See `docs/event-protocol.md` and `docs/adapter.md`.
  */
 export class ToneAudioAdapter {
-  private readonly channels = new Map<string, Tone.PolySynth>();
+  /** Adapter-owned master bus. Chains should connect to this, not
+   * `Tone.Destination` directly. Carries the user-facing volume in dB
+   * (controlled by the volume slider via `setParam('master.volume', ...)`). */
+  readonly master: Tone.Volume;
+
+  /** Internal mute gate between `master` and the destination. Adapter ramps
+   * this 0↔1 on start/stop. Separate from `master.volume` so the user's
+   * slider position isn't disturbed by play/pause fades. */
+  private readonly out: Tone.Gain;
+
+  private readonly channels = new Map<string, ChannelRegistration>();
+  private readonly params = new Map<string, ParamSetter>();
+  private readonly tickListeners: Array<(ev: TickEvent) => void> = [];
+
   private engine: Engine | null = null;
   private startAudioTime = 0;
   private intervalId: ReturnType<typeof setInterval> | null = null;
-  private tickListeners: Array<(ev: TickEvent) => void> = [];
+  /** Furthest absolute audio time any event has been scheduled at. Used to
+   * keep a fresh `start()` from emitting events with a `time` earlier than
+   * events still queued from a previous run (Tone's synths reject those). */
+  private latestScheduledAudioTime = 0;
 
-  /** Register a synth voice under a channel name. Idempotent. */
-  registerChannel(name: string, synth: Tone.PolySynth): void {
-    this.channels.set(name, synth);
+  constructor() {
+    this.out = new Tone.Gain(0).toDestination();
+    this.master = new Tone.Volume(0).connect(this.out);
+  }
+
+  /** Register a voice trigger under a channel name. Idempotent. */
+  registerChannel(name: string, registration: ChannelRegistration): void {
+    this.channels.set(name, registration);
+  }
+
+  /** Register a parameter target (`'master.warmth'`, `'fx.chorus.depth'`). */
+  registerParam(target: string, setter: ParamSetter): void {
+    this.params.set(target, setter);
   }
 
   /** Attach the engine the adapter will pull events from. */
@@ -41,45 +71,63 @@ export class ToneAudioAdapter {
   }
 
   /**
+   * Direct parameter setter — used by UI sliders. Same code path as
+   * engine-emitted `ParamEvent`s.
+   */
+  setParam(target: string, value: number, rampMs = 0): void {
+    const setter = this.params.get(target);
+    if (!setter) {
+      console.warn(`[loam] no param registered for "${target}"`);
+      return;
+    }
+    if (rampMs > 0) setter.ramp(value, rampMs / 1000);
+    else setter.set(value);
+  }
+
+  /**
    * Resume the AudioContext, anchor engine-time to the current audio time,
    * and start the scheduling loop. Must be called from a user gesture.
    */
   async start(): Promise<void> {
     await Tone.start();
-    // Restore master volume in case a previous stop() faded it down.
-    const dest = Tone.getDestination();
-    dest.volume.cancelScheduledValues(Tone.now());
-    dest.volume.rampTo(0, 0.05);
+    // Fade the mute gate up. Explicit AudioParam scheduling (rather than
+    // Tone's `rampTo`) so the value lands at exactly 1, not asymptotic.
+    const now = Tone.now();
+    const gain = this.out.gain;
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(gain.value, now);
+    gain.linearRampToValueAtTime(1, now + 0.05);
 
     this.engine?.reset();
-    this.startAudioTime = Tone.now();
+    // Anchor past anything pre-scheduled by a previous run, plus a hair of
+    // safety so per-voice "last scheduled" guards don't fire on the very
+    // first event. First start: latestScheduledAudioTime == 0, no offset.
+    this.startAudioTime = Math.max(Tone.now(), this.latestScheduledAudioTime + 0.005);
     this.pumpOnce();
     this.intervalId = setInterval(() => this.pumpOnce(), TICK_INTERVAL_MS);
   }
 
   /**
-   * Stop the scheduling loop and kill audio within ~30 ms. Master volume is
-   * ramped to silence (fast enough to feel immediate, slow enough not to
-   * click), then `releaseAll()` is called on each registered synth so voice
-   * state doesn't leak. Pending pre-scheduled events still fire — but the
-   * master is muted by then, so they're silent.
-   *
-   * Note: this touches the global `Tone.Destination`. Acceptable while
-   * there's only one adapter; Stage 4+ will move to an adapter-owned master
-   * Gain so multiple adapters could coexist. See `docs/adapter.md` §8.
+   * Stop the scheduling loop and kill audio within ~10 ms. The internal
+   * mute gate is linearly ramped to 0 (instant-feeling, click-free), then
+   * `releaseAll()` is called on each registered channel that supplies one.
+   * Always-on noise sources (brown bed, rain) are silenced too because they
+   * route through the gate. See `docs/adapter.md` §7.
    */
   stop(): void {
     if (this.intervalId !== null) {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
-    const dest = Tone.getDestination();
-    dest.volume.cancelScheduledValues(Tone.now());
-    dest.volume.rampTo(-Number.POSITIVE_INFINITY, STOP_FADE_SEC);
+    const now = Tone.now();
+    const gain = this.out.gain;
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(gain.value, now);
+    gain.linearRampToValueAtTime(0, now + STOP_FADE_SEC);
     setTimeout(
       () => {
-        for (const synth of this.channels.values()) {
-          synth.releaseAll();
+        for (const reg of this.channels.values()) {
+          reg.releaseAll?.();
         }
       },
       STOP_FADE_SEC * 1000 + 5,
@@ -93,6 +141,12 @@ export class ToneAudioAdapter {
     const events = this.engine.scheduleUntil(until);
     for (const event of events) {
       this.dispatch(event);
+    }
+    // Remember the furthest absolute audio time we've reached so a
+    // subsequent start() can anchor past it.
+    const absoluteUntil = this.startAudioTime + until;
+    if (absoluteUntil > this.latestScheduledAudioTime) {
+      this.latestScheduledAudioTime = absoluteUntil;
     }
   }
 
@@ -111,19 +165,16 @@ export class ToneAudioAdapter {
   }
 
   private dispatchNote(event: NoteEvent): void {
-    const synth = this.channels.get(event.channel);
-    if (!synth) {
-      console.warn(`[loam] no synth registered for channel "${event.channel}"`);
+    const reg = this.channels.get(event.channel);
+    if (!reg) {
+      console.warn(`[loam] no channel registered for "${event.channel}"`);
       return;
     }
-    const freq = Tone.Frequency(event.pitch, 'midi').toFrequency();
-    const durationSec = event.durationMs / 1000;
     const audioTime = this.startAudioTime + event.time;
-    synth.triggerAttackRelease(freq, durationSec, audioTime, event.velocity);
+    reg.trigger(event, audioTime);
   }
 
-  private dispatchParam(_event: ParamEvent): void {
-    // TODO Stage 4+: route dotted-path targets (master.warmth, fx.chorus.depth, ...)
-    // to real Tone.js parameters with rampTo. Stage-3 vamp doesn't emit any.
+  private dispatchParam(event: ParamEvent): void {
+    this.setParam(event.target, event.value, event.rampMs ?? 0);
   }
 }

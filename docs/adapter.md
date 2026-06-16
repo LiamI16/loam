@@ -146,7 +146,76 @@ master Gain (`adapter.output`) and route channels through it instead of
 straight to destination. The fade then targets the adapter master, not the
 global destination.
 
-## 8. Adapter currently runs only in a browser
+## 8. Two-node master pipeline (Volume + mute-gate Gain)
+
+Stage 4 introduced an adapter-owned master bus replacing the global-
+destination touching from Stage 3:
+
+```
+[channels] ─► warmth ─► master (Tone.Volume, dB) ─► out (Tone.Gain, 0/1) ─► destination
+                                                  ▲
+                                        adapter's start/stop fades this
+```
+
+- **`master`** (Tone.Volume) — user-facing volume in dB. The volume slider
+  drives `master.volume.value` via `setParam('master.volume', dB)`. Stays
+  put across play/pause.
+- **`out`** (Tone.Gain) — adapter-internal mute gate. Fades 0↔1 on
+  start/stop via explicit `linearRampToValueAtTime`, *not* Tone's
+  `rampTo` — the latter can asymptote rather than reach exactly 0,
+  leaving always-on noise beds (brown bed, rain) faintly audible during
+  pause. Bit me in Stage 4 testing; the explicit AudioParam call is the
+  reliable fix.
+
+Texture beds (rain, vinyl crackle, brown bed) connect directly to
+`master`, bypassing the warmth filter — that way "warmth = dark" muffles
+the music only, not the ambient layer. Departure from the prototype.
+
+## 9. `latestScheduledAudioTime` watermark
+
+Tone's per-voice synths track "last scheduled time" internally and reject
+events scheduled before it. After stop+swap+start within the 200 ms
+lookahead window (e.g. mid-playback reseed or BPM change), pre-scheduled
+events from the previous run can still be in the future — new engine
+events anchored at "now" land *before* them and Tone throws.
+
+Fix: the adapter remembers the furthest absolute audio time any pump has
+reached (`latestScheduledAudioTime`). On `start()`, the new
+`startAudioTime` is `max(Tone.now(), latestScheduledAudioTime + 5 ms)`.
+First-ever start: watermark is 0, no offset. Subsequent restarts within
+the lookahead: anchor just past pending events. Inaudible because the
+master gate is faded down during the swap anyway.
+
+## 10. Channels register a `(trigger, releaseAll?)` callback pair
+
+Stage 3's first cut had channels register a `Tone.PolySynth` directly.
+Stage 4's chain ports drums (`MembraneSynth`, `NoiseSynth`) and vinyl
+crackle, which have different `triggerAttackRelease` signatures and no
+useful pitch. Forcing a uniform synth type would either lose pitch info
+on `PolySynth` or wedge non-pitched synths into a misleading shape.
+
+So `ChannelRegistration` is now:
+
+```ts
+interface ChannelRegistration {
+  trigger: (event: NoteEvent, audioTime: number) => void;
+  releaseAll?: () => void;
+}
+```
+
+The chain knows what each voice expects and supplies a small adapter
+closure. The adapter dispatches and is otherwise dumb. `releaseAll` is
+optional because percussion voices don't sustain.
+
+## 11. Param dispatch via setter callbacks (not raw Tone.Param)
+
+Same pattern as channels — `registerParam` takes a `{set, ramp}` pair, not
+a Tone Param reference. Avoids the generic `Param<unit>` type incompatibility
+(Frequency vs Gain vs Decibels) leaking into the adapter, and lets each
+chain wrap its Params with whatever units make sense locally. Adapter
+always speaks numbers; chains translate at the boundary.
+
+## 12. Adapter currently runs only in a browser
 
 `packages/synth-tone/tsconfig.json` includes `"DOM"` in `lib` because the
 adapter uses browser globals (`console.warn`, `setInterval`). The adapter

@@ -285,6 +285,49 @@ the *same* events it would have produced without the pause — needs either
 Audio, or (b) the engine to support `rewindTo(t)`. Neither exists yet;
 Stage 3 doesn't pause. Will matter at the first real pause implementation.
 
+### 9.6c Engine options are a shared mutable object across sub-schedulers
+
+Stage 4's `EmberEngine` composes four sub-schedulers (chord, drum, melody,
+crackle) and constructs *one* `ResolvedEmberOptions` object that's passed
+by reference to all of them. `engine.setOption(name, value)` mutates the
+shared object in place; sub-schedulers read fresh on every tick.
+
+**Implications:**
+
+- Sub-schedulers must read `this.opts.x` on each call, not cache values
+  derived from options at construction. The Stage 4 schedulers cache
+  `secondsPerStep` / `secondsPerBeat` / `secondsPerChord` though — meaning
+  **`bpm` is effectively immutable for the life of an engine instance**.
+  Live BPM change requires rebuilding the engine entirely (and the demo's
+  BPM slider does exactly that via swap-engine on `change`).
+- The reference-sharing discipline is invisible in the type system. If
+  any sub-scheduler ever shallow-copies its options, live mutations stop
+  propagating. Worth noting in any new sub-scheduler review.
+
+### 9.6d Sub-scheduler `reset()` re-derives `Rng` from the seed
+
+Each Stage 4 sub-scheduler stores its `Seed` (not just an `Rng`) and on
+`reset()` builds a fresh `Rng = seed.rng()`. So resets are
+*reproducible* — the first events after reset are identical to the first
+events after construction. This is what makes "stop then start with the
+same seed → same opening event sequence" true.
+
+If a sub-scheduler were to store the `Rng` directly and reset only its
+cursors, the Rng would carry forward and "reset" wouldn't actually
+reset — the seed-determinism contract on resets would break silently.
+
+### 9.6e `Channels.BELL` is temporarily reused for vinyl crackle
+
+Stage 4's `CrackleScheduler` emits on `Channels.BELL` because the lo-fi
+chain registers the crackle NoiseSynth there. Stage 5's ornament work
+will:
+1. Add a dedicated `Channels.VINYL` (or similar) for crackle.
+2. Free `Channels.BELL` to mean what its name suggests — a soft bell-tone
+   ornament voice per `docs/ornaments.md` §3.
+
+Anything referring to "BELL" today should be treated as a Stage-4-only
+alias.
+
 ### 9.6 Channels are strings (no compile-time check)
 
 `channel: string` on `NoteEvent` allows new channels without an adapter API
