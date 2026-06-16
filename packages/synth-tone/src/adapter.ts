@@ -5,6 +5,12 @@ import * as Tone from 'tone';
 const LOOKAHEAD_SEC = 0.2;
 /** How often the adapter polls the engine for the next chunk of events. */
 const TICK_INTERVAL_MS = 25;
+/** Master-bus fade-out time when stop() is called. ~10 ms is short enough
+ * to feel instant and long enough to avoid an audible click. Below ~5 ms
+ * starts to risk a discontinuity click depending on signal phase. The
+ * absolute floor on perceived stop latency is the AudioContext's
+ * `outputLatency` (hardware-dependent, typically 5–30 ms). */
+const STOP_FADE_SEC = 0.01;
 
 /**
  * The single layer that talks to Tone.js. Owns a registry of named channels
@@ -40,18 +46,44 @@ export class ToneAudioAdapter {
    */
   async start(): Promise<void> {
     await Tone.start();
+    // Restore master volume in case a previous stop() faded it down.
+    const dest = Tone.getDestination();
+    dest.volume.cancelScheduledValues(Tone.now());
+    dest.volume.rampTo(0, 0.05);
+
     this.engine?.reset();
     this.startAudioTime = Tone.now();
     this.pumpOnce();
     this.intervalId = setInterval(() => this.pumpOnce(), TICK_INTERVAL_MS);
   }
 
-  /** Stop the scheduling loop. Already-scheduled audio events will finish. */
+  /**
+   * Stop the scheduling loop and kill audio within ~30 ms. Master volume is
+   * ramped to silence (fast enough to feel immediate, slow enough not to
+   * click), then `releaseAll()` is called on each registered synth so voice
+   * state doesn't leak. Pending pre-scheduled events still fire — but the
+   * master is muted by then, so they're silent.
+   *
+   * Note: this touches the global `Tone.Destination`. Acceptable while
+   * there's only one adapter; Stage 4+ will move to an adapter-owned master
+   * Gain so multiple adapters could coexist. See `docs/adapter.md` §8.
+   */
   stop(): void {
     if (this.intervalId !== null) {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
+    const dest = Tone.getDestination();
+    dest.volume.cancelScheduledValues(Tone.now());
+    dest.volume.rampTo(-Number.POSITIVE_INFINITY, STOP_FADE_SEC);
+    setTimeout(
+      () => {
+        for (const synth of this.channels.values()) {
+          synth.releaseAll();
+        }
+      },
+      STOP_FADE_SEC * 1000 + 5,
+    );
   }
 
   private pumpOnce(): void {

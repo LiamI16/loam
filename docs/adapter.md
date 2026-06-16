@@ -112,7 +112,41 @@ moment.
 Sounds like a soft cut, not a crash. Not a Stage-3 problem; worth knowing
 when we land melody.
 
-## 7. Adapter currently runs only in a browser
+## 7. `stop()` kills audio in ~10 ms via master-fade, not by cancelling events
+
+The naive `stop()` (just clear the pump) leaves a ~5-second audible tail
+because each chord triggers `triggerAttackRelease(freq, fullDuration, ...)`
+and the synth is then committed to the envelope's decay + release tail.
+Pending events in the 200 ms lookahead also still fire.
+
+Current `stop()` instead:
+
+1. Clears the pump (no new events generated).
+2. Ramps `Tone.getDestination().volume` to `-Infinity` over 10 ms
+   (`STOP_FADE_SEC`) — fast enough to feel instant in A/B testing, slow
+   enough to avoid a click. 30 ms was perceptibly delayed; below ~5 ms
+   risks a discontinuity click depending on signal phase.
+3. After the fade, calls `releaseAll()` on each registered synth so voice
+   state doesn't leak.
+
+The absolute floor on perceived stop latency is the AudioContext's
+`outputLatency` (hardware-dependent, usually 5–30 ms on macOS) plus DOM
+event dispatch (~5–10 ms). To inspect on a given machine:
+`Tone.getContext().rawContext.outputLatency`.
+
+Pre-scheduled events in the lookahead window still trigger but are silent
+under the muted master.
+
+Trade: this touches the **global `Tone.Destination`**, not an adapter-owned
+master Gain. Fine while there's only one adapter (which is the only case
+for v1), but technically a second adapter sharing the AudioContext would
+see its output muted by the first one's `stop()`. Stage 4 will introduce a
+master warmth filter anyway — natural moment to add an adapter-owned
+master Gain (`adapter.output`) and route channels through it instead of
+straight to destination. The fade then targets the adapter master, not the
+global destination.
+
+## 8. Adapter currently runs only in a browser
 
 `packages/synth-tone/tsconfig.json` includes `"DOM"` in `lib` because the
 adapter uses browser globals (`console.warn`, `setInterval`). The adapter
