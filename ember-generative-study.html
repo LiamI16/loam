@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>ember — infinite study</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+<style>
+  :root{
+    --bg:#15100d;          /* deep warm espresso */
+    --bg2:#1d1612;
+    --ember:#e8a35a;       /* warm amber */
+    --ember-dim:#7a4a23;
+    --ink:#b6a596;         /* muted warm grey text */
+    --ink-faint:#6f6358;
+    --line:#2a221c;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    background:radial-gradient(120% 120% at 50% 18%, var(--bg2) 0%, var(--bg) 60%);
+    color:var(--ink);
+    font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    min-height:100%;
+    -webkit-font-smoothing:antialiased;
+    user-select:none;
+    overflow:hidden;
+  }
+  .wrap{display:flex;flex-direction:column;align-items:center;gap:42px;padding:32px}
+
+  /* ---- the ember: hero + play affordance ---- */
+  .ember-stage{position:relative;width:200px;height:200px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .ember{
+    position:absolute;width:96px;height:96px;border-radius:50%;
+    background:radial-gradient(circle at 50% 45%, #f6c483 0%, var(--ember) 38%, var(--ember-dim) 72%, transparent 100%);
+    opacity:.28;filter:blur(.3px);
+    transition:opacity 1.2s ease;
+  }
+  .glow{
+    position:absolute;width:200px;height:200px;border-radius:50%;
+    background:radial-gradient(circle, rgba(232,163,90,.20) 0%, transparent 62%);
+    opacity:.25;transition:opacity 1.2s ease;
+  }
+  .ember-stage.on .ember{opacity:.92;animation:breathe var(--beat,0.8s) ease-in-out infinite}
+  .ember-stage.on .glow{opacity:.85;animation:breatheGlow var(--beat,0.8s) ease-in-out infinite}
+  @keyframes breathe{
+    0%,100%{transform:scale(.94);opacity:.62}
+    50%{transform:scale(1.06);opacity:.98}
+  }
+  @keyframes breatheGlow{
+    0%,100%{transform:scale(.9);opacity:.5}
+    50%{transform:scale(1.12);opacity:.95}
+  }
+  .ember-stage:focus-visible{outline:none}
+  .ember-stage:focus-visible .glow{box-shadow:0 0 0 2px rgba(232,163,90,.5);border-radius:50%}
+
+  .hint{font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink-faint);height:14px}
+
+  /* ---- controls ---- */
+  .panel{display:flex;flex-direction:column;gap:22px;width:280px;opacity:.85}
+  .row{display:flex;flex-direction:column;gap:9px}
+  .label{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint)}
+  .label b{color:var(--ink);font-weight:400}
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;width:100%;height:2px;background:var(--line);border-radius:2px;outline:none;cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;width:13px;height:13px;border-radius:50%;
+    background:var(--ember);box-shadow:0 0 8px rgba(232,163,90,.5);transition:transform .15s ease;
+  }
+  input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.25)}
+  input[type=range]::-moz-range-thumb{width:13px;height:13px;border:none;border-radius:50%;background:var(--ember);box-shadow:0 0 8px rgba(232,163,90,.5)}
+
+  .toggles{display:flex;gap:10px}
+  .tog{
+    flex:1;text-align:center;padding:10px 0;font-size:10px;letter-spacing:.2em;text-transform:uppercase;
+    color:var(--ink-faint);border:1px solid var(--line);border-radius:10px;background:transparent;cursor:pointer;
+    transition:all .25s ease;
+  }
+  .tog.active{color:var(--bg);background:var(--ember);border-color:var(--ember);box-shadow:0 0 16px rgba(232,163,90,.25)}
+
+  .footer{position:fixed;bottom:22px;font-size:9px;letter-spacing:.3em;text-transform:uppercase;color:var(--ink-faint);opacity:.7}
+  .footer span{color:var(--ember-dim)}
+
+  @media (prefers-reduced-motion: reduce){
+    .ember-stage.on .ember,.ember-stage.on .glow{animation:none}
+    .ember-stage.on .ember{opacity:.92}.ember-stage.on .glow{opacity:.8}
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="ember-stage" id="stage" role="button" tabindex="0" aria-label="Play or pause">
+      <div class="glow"></div>
+      <div class="ember"></div>
+    </div>
+    <div class="hint" id="hint">tap the ember to begin</div>
+
+    <div class="panel">
+      <div class="row">
+        <div class="label"><span>volume</span><b id="volVal">68</b></div>
+        <input id="vol" type="range" min="0" max="100" value="68">
+      </div>
+      <div class="row">
+        <div class="label"><span>warmth</span><b id="warmVal">soft</b></div>
+        <input id="warm" type="range" min="0" max="100" value="55">
+      </div>
+      <div class="row">
+        <div class="label"><span>density</span><b id="denVal">low</b></div>
+        <input id="den" type="range" min="0" max="100" value="32">
+      </div>
+      <div class="toggles">
+        <button class="tog" id="rain">rain</button>
+        <button class="tog active" id="vinyl">vinyl</button>
+      </div>
+    </div>
+  </div>
+  <div class="footer">offline · generative · <span>infinite</span></div>
+
+<script>
+/* ===========================================================
+   ember — an offline, infinite, generative lo-fi study engine
+   Everything is locked to C major / A-minor-pentatonic so no
+   note can ever sound "wrong." Evolution is slow and event-less
+   by design: nothing should ever grab your attention.
+   =========================================================== */
+
+const BPM = 74;
+let started = false, playing = false, audio = null;
+const state = { density: 0.18, rain: false, vinyl: true };
+
+// --- musical material (all diatonic to C major: smooth in any order) ---
+const CHORDS = {
+  Cmaj7: ['C4','E4','G4','B4'],
+  Am7:   ['A3','C4','E4','G4'],
+  Dm7:   ['D4','F4','A4','C5'],
+  Fmaj7: ['F3','A3','C4','E4'],
+  Em7:   ['E3','G3','B3','D4'],
+  G7:    ['G3','B3','D4','F4'],
+};
+const PROGRESSIONS = [
+  ['Cmaj7','Am7','Dm7','G7'],
+  ['Fmaj7','Em7','Dm7','Cmaj7'],
+  ['Am7','Dm7','G7','Cmaj7'],
+  ['Dm7','G7','Em7','Am7'],
+];
+const PENT = ['A4','C5','D5','E5','G5','A5','C6']; // A-minor pentatonic spread
+
+const rand  = arr => arr[Math.floor(Math.random()*arr.length)];
+const chance = p => Math.random() < p;
+
+async function buildAudio(){
+  await Tone.start();
+  Tone.Transport.bpm.value = BPM;
+  Tone.Transport.swing = 0.34;            // the behind-the-beat lo-fi lope
+  Tone.Transport.swingSubdivision = '16n';
+
+  // ---- master / glue chain ----
+  const master = new Tone.Volume(volToDb(0.68)).toDestination();
+  const warmth = new Tone.Filter({ type:'lowpass', frequency: warmHz(0.55), rolloff:-12 }).connect(master);
+  const reverb = new Tone.Reverb({ decay: 7, preDelay: 0.02, wet: 0.34 }).connect(warmth);
+
+  // evolving filter on the harmonic bus — the ONLY thing that "moves",
+  // and it moves over ~40s so you never notice a moment happening.
+  const evo = new Tone.Filter({ type:'lowpass', frequency: 1800, rolloff:-24 }).connect(reverb);
+  new Tone.LFO({ frequency: 0.024, min: 1150, max: 2650 }).connect(evo.frequency).start();
+  const chorus = new Tone.Chorus({ frequency: 0.4, delayTime: 3.5, depth: 0.3, wet: 0.35 }).start().connect(evo);
+
+  // ---- Rhodes-ish keys (chords) ----
+  const keys = new Tone.PolySynth(Tone.FMSynth, {
+    harmonicity: 3, modulationIndex: 7,
+    oscillator:{ type:'sine' },
+    envelope:{ attack:0.03, decay:0.7, sustain:0.28, release:2.6 },
+    modulation:{ type:'triangle' },
+    modulationEnvelope:{ attack:0.02, decay:0.4, sustain:0.1, release:1.2 },
+    volume:-11,
+  }).connect(chorus);
+
+  // ---- soft pad underneath (the "blanket") ----
+  const pad = new Tone.PolySynth(Tone.AMSynth, {
+    harmonicity: 2, oscillator:{ type:'triangle' },
+    envelope:{ attack:1.4, decay:0.6, sustain:0.8, release:4 },
+    volume:-20,
+  }).connect(chorus);
+
+  // ---- drums: soft, muffled, mostly dry ----
+  const drumBus = new Tone.Filter({ type:'lowpass', frequency: 4200, rolloff:-12 }).connect(warmth);
+  const kick  = new Tone.MembraneSynth({ pitchDecay:0.05, octaves:4,
+                envelope:{ attack:0.001, decay:0.4, sustain:0.01, release:1.4 }, volume:-7 }).connect(drumBus);
+  const snare = new Tone.NoiseSynth({ noise:{ type:'pink' },
+                envelope:{ attack:0.001, decay:0.16, sustain:0 }, volume:-15 }).connect(drumBus);
+  const hatFx = new Tone.Filter({ type:'highpass', frequency:7000 }).connect(drumBus);
+  const hat   = new Tone.NoiseSynth({ noise:{ type:'white' },
+                envelope:{ attack:0.001, decay:0.04, sustain:0 }, volume:-26 }).connect(hatFx);
+
+  // ---- texture beds ----
+  const bed = new Tone.Noise('brown').start();
+  const bedF = new Tone.Filter({ type:'lowpass', frequency:480 });
+  const bedV = new Tone.Volume(-30); bed.chain(bedF, bedV, warmth);
+
+  const rain = new Tone.Noise('white').start();
+  const rainF = new Tone.Filter({ type:'bandpass', frequency:2600, Q:0.7 });
+  const rainV = new Tone.Volume(-Infinity); rain.chain(rainF, rainV, warmth);
+
+  const crackV = new Tone.Volume(-20).connect(warmth);
+  const crackF = new Tone.Filter({ type:'highpass', frequency:3500 }).connect(crackV);
+  const crack  = new Tone.NoiseSynth({ noise:{ type:'pink' },
+                 envelope:{ attack:0.001, decay:0.012, sustain:0 }, volume:-4 }).connect(crackF);
+
+  await reverb.ready;
+
+  // ---- sequencing ----
+  let prog = rand(PROGRESSIONS), step = 0;
+  const kickSeq  = [1,0,0,0, 0,0,1,0, 0,0,1,0, 0,0,0,0];
+  const snareSeq = [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0];
+
+  const groove = new Tone.Sequence((time, i)=>{
+    if(kickSeq[i])  kick.triggerAttackRelease('C1','8n', time, 0.9);
+    if(snareSeq[i]) snare.triggerAttackRelease('16n', time, 0.7);
+    if(i % 2 === 0) hat.triggerAttackRelease('32n', time, i%4===0 ? 0.5 : 0.32); // soft 8th hats
+    else if(chance(0.18)) hat.triggerAttackRelease('32n', time, 0.18);            // ghost
+  }, [...Array(16).keys()], '16n').start(0);
+
+  // chord every 2 measures; new voicing colour each time
+  let ci = 0;
+  const harmony = new Tone.Loop((time)=>{
+    const name = prog[ci % prog.length];
+    let voicing = CHORDS[name].slice();
+    if(chance(0.5)) voicing = voicing.map((n,k)=> k===0 && chance(0.4) ? Tone.Frequency(n).transpose(-12).toNote() : n);
+    keys.triggerAttackRelease(voicing, '1m', time, 0.5 + Math.random()*0.12);
+    // pad on root + fifth, very soft
+    const root = voicing[0];
+    pad.triggerAttackRelease([root, Tone.Frequency(root).transpose(7).toNote()], '2m', time, 0.4);
+    ci++;
+    if(ci % prog.length === 0 && chance(0.45)) prog = rand(PROGRESSIONS); // drift to a new loop, occasionally
+  }, '2m').start(0);
+
+  // sparse incidental melody — never dense enough to become a hook
+  const melody = new Tone.Loop((time)=>{
+    if(chance(state.density)){
+      const note = rand(PENT);
+      keys.triggerAttackRelease(note, chance(0.5)?'4n':'8n', time, 0.22 + Math.random()*0.12);
+    }
+  }, '4n').start('0:1');
+
+  // vinyl crackle — random clicks
+  const crackle = new Tone.Loop((time)=>{
+    if(state.vinyl && chance(0.22)) crack.triggerAttackRelease('64n', time, 0.2 + Math.random()*0.5);
+  }, '16n').start(0);
+
+  return {
+    master, warmth, rainV,
+    setVol: v => master.volume.rampTo(volToDb(v), 0.3),
+    setWarm: v => warmth.frequency.rampTo(warmHz(v), 0.4),
+    setRain: on => rainV.volume.rampTo(on ? -17 : -Infinity, 1.2),
+  };
+}
+
+// volume curve: 0 -> silence, 1 -> 0 dB
+function volToDb(v){ return v <= 0.001 ? -Infinity : (Math.log10(v) * 26); }
+// warmth: muffled (≈900 Hz) -> open (≈14 kHz)
+function warmHz(v){ return 900 * Math.pow(14000/900, v); }
+
+// ---------- UI wiring ----------
+const stage = document.getElementById('stage');
+const hint  = document.getElementById('hint');
+stage.style.setProperty('--beat', (60/BPM)+'s');
+
+async function toggle(){
+  if(!started){
+    hint.textContent = 'warming up…';
+    audio = await buildAudio();
+    started = true;
+    syncControls();
+  }
+  playing = !playing;
+  if(playing){ Tone.Transport.start('+0.1'); stage.classList.add('on'); hint.textContent='listening · leave it running'; }
+  else { Tone.Transport.pause(); stage.classList.remove('on'); hint.textContent='paused'; }
+}
+stage.addEventListener('click', toggle);
+stage.addEventListener('keydown', e=>{ if(e.key===' '||e.key==='Enter'){ e.preventDefault(); toggle(); }});
+
+const $ = id => document.getElementById(id);
+function syncControls(){
+  audio.setVol(+$('vol').value/100);
+  audio.setWarm(+$('warm').value/100);
+  audio.setRain(state.rain);
+}
+
+$('vol').addEventListener('input', e=>{ $('volVal').textContent=e.target.value; if(audio) audio.setVol(+e.target.value/100); });
+$('warm').addEventListener('input', e=>{
+  const v=+e.target.value; $('warmVal').textContent = v<33?'dark':v<66?'soft':'open';
+  if(audio) audio.setWarm(v/100);
+});
+$('den').addEventListener('input', e=>{
+  const v=+e.target.value; state.density = 0.05 + (v/100)*0.33;
+  $('denVal').textContent = v<33?'low':v<66?'med':'busy';
+});
+$('rain').addEventListener('click', e=>{
+  state.rain=!state.rain; e.target.classList.toggle('active',state.rain);
+  if(audio) audio.setRain(state.rain);
+});
+$('vinyl').addEventListener('click', e=>{
+  state.vinyl=!state.vinyl; e.target.classList.toggle('active',state.vinyl);
+});
+// init density label
+state.density = 0.05 + (32/100)*0.33;
+</script>
+</body>
+</html>
