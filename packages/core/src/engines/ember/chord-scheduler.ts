@@ -9,6 +9,7 @@ import {
   HAND_MATRIX,
   MarkovChordWalk,
   perturbMatrix,
+  type Register,
   type TransitionMatrix,
   voiceChord,
 } from './harmony/index.js';
@@ -34,6 +35,18 @@ import {
 const BASS_LOW = 36;
 const BASS_HIGH = 50;
 
+/** Voicing register characteristics, per-seed. Center wanders within
+ * [-10, +15] semitones of MIDI 64 (E4) — asymmetric because the low
+ * end gets muddy / muffled past about -10 (chords overlap the pad and
+ * lose definition), while the bright high end stays musical out to
+ * +15 (Wurlitzer / vibraphone / low-celesta territory). Width is fixed
+ * at 24 (two octaves) — wide enough that the greedy solver always
+ * finds a chord tone within reach. */
+const REGISTER_WIDTH = 24;
+const REGISTER_CENTER_DEFAULT = 64;
+const REGISTER_CENTER_MIN_SHIFT = -11;
+const REGISTER_CENTER_MAX_SHIFT = 13;
+
 /** Probability a held chord re-articulates an inner voice an octave up
  * at bar 1 (mid-cycle). Per `docs/lofi-study.md` §11 voicing rotation —
  * gives sustained chords a subtle shimmer without changing harmony.
@@ -50,6 +63,7 @@ export class ChordScheduler implements SubScheduler {
   private nextChordIdx = 0;
   private readonly perturbed: TransitionMatrix;
   private readonly secondsPerChord: number;
+  private readonly register: Register;
 
   constructor(
     private readonly seed: Seed,
@@ -57,6 +71,15 @@ export class ChordScheduler implements SubScheduler {
   ) {
     this.secondsPerChord = (60 / state.bpm) * 4 * 2; // 2 bars in 4/4
     this.perturbed = perturbMatrix(HAND_MATRIX, seed.child('markov-config').rng(), { alpha: 20 });
+    // Per-seed voicing register fingerprint: integer center shift so the
+    // chord pitches fall on whole semitones (no detuning).
+    const registerRng = seed.child('voicing-register-config').rng();
+    const centerShift = registerRng.nextInt(REGISTER_CENTER_MIN_SHIFT, REGISTER_CENTER_MAX_SHIFT);
+    const center = REGISTER_CENTER_DEFAULT + centerShift;
+    this.register = {
+      low: center - Math.floor(REGISTER_WIDTH / 2),
+      high: center + Math.ceil(REGISTER_WIDTH / 2),
+    };
     this.reset();
   }
 
@@ -84,7 +107,7 @@ export class ChordScheduler implements SubScheduler {
         chordName = this.walk.next();
       }
       const chord = CHORDS[chordName];
-      const voicing = voiceChord(this.prevVoicing, chord);
+      const voicing = voiceChord(this.prevVoicing, chord, { register: this.register });
       this.prevVoicing = voicing;
       this.state.currentChord = chord;
 

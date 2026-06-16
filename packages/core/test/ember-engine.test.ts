@@ -99,10 +99,10 @@ describe('EmberEngine', () => {
     expect({ count: events.length, fingerprint }).toEqual({
       count: 63,
       fingerprint: [
+        'n:rhodes:52:0.0000',
+        'n:rhodes:55:0.0000',
+        'n:rhodes:57:0.0000',
         'n:rhodes:60:0.0000',
-        'n:rhodes:64:0.0000',
-        'n:rhodes:67:0.0000',
-        'n:rhodes:69:0.0000',
         'n:pad:45:0.0000',
         'n:pad:52:0.0000',
       ],

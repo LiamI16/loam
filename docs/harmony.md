@@ -101,7 +101,13 @@ Algorithm (per `docs/lofi-study.md` §4 priorities):
    octaves nearest `register.low + 7`, then sort.
 
 Output: MIDI pitches, sorted ascending, voice count matches `prev`.
-Default register E3–E5 (52–76), a Rhodes-ish mid.
+Default register E3–E5 (52–76), a Rhodes-ish mid. `ChordScheduler`
+overrides this per-seed: an asymmetric `[-11, +13]`-semitone shift on
+the center (drawn from `seed.child('voicing-register-config')`) lets
+different seeds inhabit different parts of the keyboard — warm low-mid
+Rhodes through bright Wurlitzer/vibraphone range. Range is asymmetric
+because going much below the low bound starts to overlap the pad and
+muddy the chord; the bright end stays musical farther out.
 
 Approximations vs an exact L1-optimal assignment:
 - Voices are assigned independently, so two prev voices can collapse
