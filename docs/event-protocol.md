@@ -184,3 +184,83 @@ interface Engine {
 
 These shapes are first-draft — the actual API will firm up during Stage 2
 of `current-stage-list.md`.
+
+---
+
+## 9. Design assumptions baked in
+
+A handful of contracts inherited from the first-draft types that affect
+musical and architectural choices downstream. Surface here so they don't
+have to be rediscovered.
+
+### 9.1 Velocity is linear (0..1), not perceptually curved
+
+`NoteEvent.velocity` is a raw 0..1 number. Human loudness perception is
+roughly logarithmic — a linear-mapped synth makes `0.7` and `0.5` sound
+nearly identical, which reads as "no dynamics" even when the engine is
+deliberately varying velocity.
+
+**Implication:** the adapter must apply a per-channel velocity curve
+(commonly `v²` for keys, gentler for percussion). Tone.js does not do this
+automatically. Until it's added in the adapter, dynamics will feel
+mechanical regardless of how alive the engine's note generation is.
+
+### 9.2 Velocity humanization lives in core, not the adapter
+
+The protocol delivers exactly what core emitted. Adapters don't add jitter,
+swing, or velocity variation on their own. If core sends the same velocity
+for every snare hit, every snare hit will play at that velocity forever.
+
+**Implication:** the "two hits are never at the same velocity" rule (and
+all per-event humanization — micro-timing, ornament jitter, ghost-hit
+variation) has to be implemented in core's emit logic using its own `Rng`.
+The adapter is dumb by design.
+
+### 9.3 Pitch is integer MIDI — no per-note detune
+
+`NoteEvent.pitch: number` is 0..127, 12-TET, integer semitones. No field
+exists for per-note pitch offset.
+
+**Implication:** tape wow/flutter, vibrato, and pitch drift are *global*
+parameter effects in the current design — driven by `ParamEvent`s on a
+filter/pitch bus, not by per-note pitch jitter. That's authentic enough for
+v1 lofi. If we ever want per-hit pitch authenticity (different wobble on
+every Rhodes note, microtonal experimentation, sample-accurate vibrato),
+the protocol needs an optional `detuneCents?: number` on `NoteEvent`.
+Strictly additive — won't break existing consumers when added.
+
+### 9.4 Notes are fire-and-forget; duration is baked in
+
+`durationMs` is set when the `NoteEvent` is emitted and cannot be changed.
+There is no `NoteOffEvent`. The adapter schedules attack and release
+together.
+
+**Implication:** "play a pad and release it whenever the next chord change
+happens" can't be expressed dynamically — the engine has to *predict* the
+chord-change time and bake the duration in at emit time. For deterministic
+scheduling (the engine schedules ahead anyway) this is fine. Forecloses
+"hold indefinitely, release on cue" without a protocol extension.
+
+### 9.5 Every dynamic knob = one ParamEvent target + one adapter route
+
+The protocol decouples *which* parameter (a string path like
+`'fx.chorus.depth'`) from *how* it's actually rendered. Beautiful for
+portability and core/adapter separation; means each of the ~50 knobs in
+`lofi-study.md` §12 needs a matching entry in the adapter's target
+registry.
+
+**Implication:** adapter complexity grows linearly with knob count. Each
+entry is one line of glue (look up `Tone.Param`, call `rampTo`), but
+forgetting one means a `ParamEvent` silently drops with a warning instead
+of producing sound. Plan to surface unknown-target warnings prominently
+during dev so this stays visible.
+
+### 9.6 Channels are strings (no compile-time check)
+
+`channel: string` on `NoteEvent` allows new channels without an adapter API
+change, but a typo (`'rhoded'` instead of `'rhodes'`) compiles fine and
+results in silence with a runtime warning.
+
+**Implication:** worth exporting a canonical `Channels` const from
+`@loam/core` once the set stabilizes, so consumers can use
+`Channels.RHODES` and get autocomplete. Until then, mind the spelling.
