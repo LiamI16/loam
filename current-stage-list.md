@@ -66,27 +66,36 @@ determinism test passes, and the event-type stubs compile. ✓
 
 ---
 
-## Stage 3 — First end-to-end thread (1 session)
+## Stage 3 — First end-to-end thread ✅
 
-The minimum amount of music that crosses both packages. Goal: prove the
-data flow, not to be musical.
+- [x] `packages/synth-tone/` scaffolded, depends on `@loam/core` and `tone`
+- [x] `ToneAudioAdapter` — channel registry, pull-based scheduler
+      (25 ms tick, 200 ms lookahead), `note` dispatch via
+      `PolySynth.triggerAttackRelease`, tick-listener fan-out, `param`
+      stub for Stage 4
+- [x] `@loam/core`: `Engine` interface + `VampEngine` placeholder
+      (Dm9 → Gmaj7, hard-coded, no randomness — 5 + 4 notes every 2 bars
+      at 74 BPM, tick events every beat)
+- [x] `Channels` const exported for typo-safe channel names
+- [x] `apps/web-demo/` scaffolded with Vite — one Play button, ember-style
+      pulse dot, warm dark palette
+- [x] Click handler starts AudioContext, builds Rhodes FMSynth + chorus +
+      reverb chain, wires Engine ↔ Adapter, calls `start()`
+- [x] 6 new tests cover VampEngine (chord boundaries, tick rhythm,
+      forward-only cursor, reset, ordering)
+- [x] Audible in a browser (user confirmed Stage 3 sounds correct)
+- [x] All packages lint / typecheck / build / test green, CI passing
 
-- [ ] `packages/synth-tone/` scaffolded, depends on `@loam/core` and `tone`
-- [ ] Adapter implements `AudioAdapter` from `event-protocol.md` §8 —
-      subscribes to engine events, translates `note` events into
-      `PolySynth.triggerAttackRelease`, registers a default `rhodes` channel
-- [ ] In `@loam/core`: a hard-coded 2-chord vamp (Dm9 → Gmaj7), switching
-      every 2 bars. No randomness, no dynamics. Emits `note` + `tick` events
-      on schedule.
-- [ ] `apps/web-demo/` scaffolded with Vite, single HTML page, one Play
-      button
-- [ ] Button starts the AudioContext on click, instantiates the engine and
-      adapter, wires them together, calls `start()`
-- [ ] You can hear the vamp in a browser
+**Design assumptions captured:**
+- `docs/event-protocol.md` §9.6a-b — engine is pull-based with no
+  background work; `scheduleUntil` is forward-only
+- `docs/adapter.md` — new doc covering scheduling model, Tone.Transport
+  abstinence, tick-listener latency, `ParamEvent` stub, signal-chain
+  duplication risk for the future Obsidian plugin, voice-stealing,
+  browser-only targeting
 
 **Done when:** clicking Play in `pnpm dev` plays the two-chord vamp
-through the modular architecture, and the seed is honored (same seed →
-same sequence — even though the sequence is trivial here).
+through the modular architecture. ✓
 
 ---
 

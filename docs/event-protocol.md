@@ -255,6 +255,36 @@ forgetting one means a `ParamEvent` silently drops with a warning instead
 of producing sound. Plan to surface unknown-target warnings prominently
 during dev so this stays visible.
 
+### 9.6a Engine is purely pull-based — no background work in core
+
+The `Engine` interface (`packages/core/src/engine.ts`) exposes only
+`scheduleUntil(t)` and `reset()`. There is no internal ticker, no
+background task, no async work. The adapter drives everything by polling.
+
+**Implication:** every generation decision must be computable at pump-time
+from the cursor and the engine's persistent state. This works fine for
+event-based generation (chord changes, note triggers, ornament firings) but
+**doesn't accommodate continuous background processes** — e.g. integrating
+a Lorenz attractor on its own fine-grained clock independent of when the
+next event happens to fire.
+
+The work-around when we need it: lazily advance such state at the start of
+each `scheduleUntil` call, integrating from the previous cursor to the new
+one in fixed sub-steps. Cheap because we're doing it at scheduling rate
+(40 Hz), not audio rate. Worth knowing in case the design ever bumps into
+the limit.
+
+### 9.6b `scheduleUntil` is forward-only past the cursor
+
+Calling `scheduleUntil(t)` with `t <= cursor` is a no-op. The only way to
+revisit emitted events is `reset()`, which goes back to time 0.
+
+**Implication:** exact pause/resume — where the engine resumes producing
+the *same* events it would have produced without the pause — needs either
+(a) the adapter to remember which events were already dispatched to Web
+Audio, or (b) the engine to support `rewindTo(t)`. Neither exists yet;
+Stage 3 doesn't pause. Will matter at the first real pause implementation.
+
 ### 9.6 Channels are strings (no compile-time check)
 
 `channel: string` on `NoteEvent` allows new channels without an adapter API

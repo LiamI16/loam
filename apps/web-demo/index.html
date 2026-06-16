@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>loam · stage 3</title>
+  <style>
+    :root {
+      --bg: #15100d;
+      --bg2: #1d1612;
+      --ember: #e8a35a;
+      --ember-dim: #7a4a23;
+      --ink: #b6a596;
+      --ink-faint: #6f6358;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: radial-gradient(120% 120% at 50% 18%, var(--bg2) 0%, var(--bg) 60%);
+      color: var(--ink);
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100%;
+      user-select: none;
+      gap: 32px;
+    }
+    button {
+      padding: 14px 42px;
+      background: transparent;
+      color: var(--ember);
+      border: 1px solid var(--ember);
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 12px;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background 0.25s ease;
+    }
+    button:hover { background: rgba(232, 163, 90, 0.08); }
+    button.on { background: var(--ember); color: var(--bg); }
+    .pulse {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--ember-dim);
+      transition: background 0.08s ease, transform 0.08s ease;
+    }
+    .pulse.on { background: var(--ember); transform: scale(1.4); }
+    .hint {
+      font-size: 10px;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+    }
+  </style>
+</head>
+<body>
+  <button id="play">play</button>
+  <div id="pulse" class="pulse"></div>
+  <div class="hint">stage 3 · Dm9 → Gmaj7 every 2 bars · 74 bpm</div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
