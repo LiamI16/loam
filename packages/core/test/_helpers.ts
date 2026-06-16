@@ -10,5 +10,6 @@ export function makeState(
     densityStream: new StaticParam(opts.density ?? 0.18),
     evoCutoffStream: new StaticParam(1800),
     vinylEnabled: opts.vinylEnabled ?? true,
+    currentChord: null,
   };
 }

@@ -3,48 +3,82 @@ import type { EngineEvent } from '../../events.js';
 import type { Rng } from '../../rng/rng.js';
 import type { Seed } from '../../rng/seed.js';
 import type { EngineState, SubScheduler } from './ember.js';
-import { CHORDS, type ChordName, PROGRESSIONS } from './progressions.js';
+import {
+  CHORDS,
+  type ChordName,
+  HAND_MATRIX,
+  MarkovChordWalk,
+  perturbMatrix,
+  type TransitionMatrix,
+  voiceChord,
+} from './harmony/index.js';
 
 /**
- * Two-bar chord vamp + soft AM pad on root + fifth, per prototype.
- *   - Picks a starting progression at random from `PROGRESSIONS`.
- *   - Every 2 bars: voices the next chord. 50 % chance to alter voicing;
- *     if altered, the root has a 40 % chance to drop by an octave.
- *   - At the end of each progression cycle, 45 % chance to switch to a
- *     different progression.
+ * Two-bar chord vamp + soft pad on root + fifth. Stage 6: chords come from
+ * a Markov walk over the harmony vocabulary (seed-perturbed per Dirichlet)
+ * with a min-motion voicing solver providing voice-leading.
  *
- * Emits `note` events on `Channels.RHODES` (the chord) and `Channels.PAD`
- * (root + fifth, 4-bar duration).
+ *   - `seed.child('markov-config')` → Dirichlet perturbation of `HAND_MATRIX`.
+ *   - `seed.child('markov-walk')`   → the walk's step decisions.
+ *   - On every chord change, mutates `state.currentChord` so other
+ *     sub-schedulers (e.g. melody filter) can read the active harmony.
+ *
+ * Pad still plays root + 5 for 4 bars per chord change. Voicing solver
+ * applies to the Rhodes chord notes only.
  */
+/** Bass register for the pad root, MIDI: C2 (36) – D3 (50). Wide enough
+ * to give every chord root an in-range octave, narrow enough that the
+ * smoothing keeps motion under a tritone per change. Floor is C2 so we
+ * never push pad fundamentals into sub-bass (where Web Audio reproduction
+ * gets murky on smaller speakers). */
+const BASS_LOW = 36;
+const BASS_HIGH = 50;
+
 export class ChordScheduler implements SubScheduler {
   private rng!: Rng;
+  private walk!: MarkovChordWalk;
+  private prevVoicing: number[] | null = null;
+  private prevPadRoot: number | null = null;
   private nextChordIdx = 0;
-  private currentProg!: readonly ChordName[];
+  private readonly perturbed: TransitionMatrix;
   private readonly secondsPerChord: number;
 
   constructor(
     private readonly seed: Seed,
-    state: EngineState,
+    private readonly state: EngineState,
   ) {
     this.secondsPerChord = (60 / state.bpm) * 4 * 2; // 2 bars in 4/4
+    this.perturbed = perturbMatrix(HAND_MATRIX, seed.child('markov-config').rng(), { alpha: 20 });
     this.reset();
   }
 
   reset(): void {
     this.nextChordIdx = 0;
+    this.prevVoicing = null;
+    this.prevPadRoot = null;
     this.rng = this.seed.rng();
-    this.currentProg = this.rng.pick(PROGRESSIONS);
+    this.walk = new MarkovChordWalk(this.perturbed, this.seed.child('markov-walk').rng(), 'Am7');
+    this.state.currentChord = CHORDS[this.walk.peek()];
   }
 
   scheduleUntil(_from: number, to: number): EngineEvent[] {
     const events: EngineEvent[] = [];
     while (this.nextChordIdx * this.secondsPerChord < to) {
       const time = this.nextChordIdx * this.secondsPerChord;
-      const slot = this.nextChordIdx % this.currentProg.length;
-      const name = this.currentProg[slot] as ChordName;
-      const voicing = this.voiceChord(CHORDS[name]);
 
-      // Chord notes — release just before the next chord
+      // First chord uses the walk's current state (set in reset()); after
+      // that, step the walk before voicing the new chord.
+      let chordName: ChordName;
+      if (this.nextChordIdx === 0) {
+        chordName = this.walk.peek();
+      } else {
+        chordName = this.walk.next();
+      }
+      const chord = CHORDS[chordName];
+      const voicing = voiceChord(this.prevVoicing, chord);
+      this.prevVoicing = voicing;
+      this.state.currentChord = chord;
+
       const chordDurationMs = (this.secondsPerChord - 0.25) * 1000;
       const chordVelocity = 0.5 + this.rng.nextFloat() * 0.12;
       for (const pitch of voicing) {
@@ -58,13 +92,17 @@ export class ChordScheduler implements SubScheduler {
         });
       }
 
-      // Pad on root + 5th, lasting 4 bars (two chord cycles) per prototype
-      const root = voicing[0] as number;
+      // Pad: root + fifth, sustaining 4 bars (two chord cycles). Pick the
+      // octave of the new chord's root nearest the previous pad root so
+      // the bass doesn't leap up to a 7th between chords. First chord
+      // anchors at the lower end of the register.
+      const padRoot = nearestRoot(chord.rootPc, this.prevPadRoot);
+      this.prevPadRoot = padRoot;
       const padDurationMs = this.secondsPerChord * 2 * 1000;
       events.push({
         kind: 'note',
         channel: Channels.PAD,
-        pitch: root,
+        pitch: padRoot,
         velocity: 0.4,
         durationMs: padDurationMs,
         time,
@@ -72,34 +110,37 @@ export class ChordScheduler implements SubScheduler {
       events.push({
         kind: 'note',
         channel: Channels.PAD,
-        pitch: root + 7,
+        pitch: padRoot + 7,
         velocity: 0.4,
         durationMs: padDurationMs,
         time,
       });
 
       this.nextChordIdx++;
-
-      // End of progression — maybe drift to another loop
-      if (this.nextChordIdx % this.currentProg.length === 0 && this.rng.bernoulli(0.45)) {
-        this.currentProg = this.rng.pick(PROGRESSIONS);
-      }
     }
     return events;
   }
+}
 
-  private voiceChord(base: readonly number[]): number[] {
-    const v = base.slice();
-    if (this.rng.bernoulli(0.5)) {
-      // Only the root (index 0) is currently subject to the octave-drop
-      // alteration in the prototype; the rest of the loop is here to match
-      // the prototype's `.map((n, k) => ...)` structure.
-      for (let k = 0; k < v.length; k++) {
-        if (k === 0 && this.rng.bernoulli(0.4)) {
-          v[k] = (v[k] as number) - 12;
-        }
-      }
-    }
-    return v;
+/** Pick the MIDI pitch in BASS_LOW..BASS_HIGH with pitch class `pc` that's
+ * closest to `target`. If `target` is null (first chord), anchor at the
+ * lower end of the register — keeps the opening grounded. */
+function nearestRoot(pc: number, target: number | null): number {
+  if (target === null) {
+    let p = pc;
+    while (p < BASS_LOW) p += 12;
+    while (p > BASS_HIGH) p -= 12;
+    return p;
   }
+  let best = -1;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (let p = BASS_LOW; p <= BASS_HIGH; p++) {
+    if (((p % 12) + 12) % 12 !== pc) continue;
+    const d = Math.abs(p - target);
+    if (d < bestDist) {
+      bestDist = d;
+      best = p;
+    }
+  }
+  return best;
 }

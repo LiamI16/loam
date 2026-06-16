@@ -6,6 +6,7 @@ import type { Seed } from '../../rng/seed.js';
 import { ChordScheduler } from './chord-scheduler.js';
 import { CrackleScheduler } from './crackle-scheduler.js';
 import { DrumScheduler } from './drum-scheduler.js';
+import type { ChordSymbol } from './harmony/index.js';
 import { MelodyScheduler } from './melody-scheduler.js';
 
 /**
@@ -36,6 +37,9 @@ export interface EngineState {
   densityStream: ParamStream;
   evoCutoffStream: ParamStream;
   vinylEnabled: boolean;
+  /** Active chord at engine-time of the most recent chord emission.
+   * `ChordScheduler` writes; `MelodyScheduler` reads for its filter. */
+  currentChord: ChordSymbol | null;
 }
 
 /** What sub-schedulers do — emit events in `[from, to)`. */
@@ -93,6 +97,7 @@ export class EmberEngine implements Engine {
     this.state = {
       bpm,
       vinylEnabled,
+      currentChord: null,
       densityStream: new FbmParam(densityFbm, {
         mean: densityMean,
         depth: densityDepth,

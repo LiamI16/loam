@@ -7,5 +7,6 @@ export {
   type EngineState,
   type SubScheduler,
 } from './ember.js';
+export * from './harmony/index.js';
 export { MelodyScheduler } from './melody-scheduler.js';
-export { CHORDS, type ChordName, PENT_MIDI, PROGRESSIONS } from './progressions.js';
+export { PENT_MIDI } from './progressions.js';

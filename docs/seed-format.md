@@ -161,15 +161,22 @@ function for any seed-derivation path.
 
 ### 7.3a Multi-layered determinism contracts (Stage 5+)
 
-As Phase 2 adds layers on top of the PRNG (value noise, fBm, soon-to-be
-Markov / attractors / L-systems), each layer gets its *own* locked-
-sequence test. Stage 5 added two:
+As Phase 2 adds layers on top of the PRNG (value noise, fBm, Markov,
+soon-to-be attractors / L-systems), each layer gets its *own* locked-
+sequence test. Current set:
 
-- `ValueNoise1D.sample(x)` — known floats for `Seed.from(42n)` at fixed
-  positions; locks the splitmix-on-demand gradient + Hermite smoothstep
-  formula.
-- `Fbm1D.sample(x)` — known floats summing 4 octaves with persistence
-  0.5 / lacunarity 2; locks the octave-stacking math.
+- `ValueNoise1D.sample(x)` (Stage 5) — known floats for `Seed.from(42n)`
+  at fixed positions; locks the splitmix-on-demand gradient + Hermite
+  smoothstep formula.
+- `Fbm1D.sample(x)` (Stage 5) — known floats summing 4 octaves with
+  persistence 0.5 / lacunarity 2; locks the octave-stacking math.
+- `MarkovChordWalk.next()` (Stage 6) — known 16-chord walk from `Am7`
+  with `Seed.from(42n).child('harmony/markov')`; locks `HAND_MATRIX`
+  weights and the walk's CDF-roll formula.
+- `perturbMatrix` (Stage 6) — known floats for the `Am7` row of the
+  α=20 perturbation under `Seed.from(42n).child('harmony/markov-config')`;
+  locks the Marsaglia–Tsang gamma sampler, Box–Muller normal, and
+  Dirichlet normalization.
 
 **Implication:** each layer's contract pins that layer specifically.
 A failing PRNG contract means the PRNG changed; a failing fBm contract

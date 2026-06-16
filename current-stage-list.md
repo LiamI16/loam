@@ -84,17 +84,55 @@ reproducible ✓; all green ✓.
 
 ---
 
-## Stage 6 (sketch) — Markov chord progressions + voice-leading
+## Stage 6 — Markov chord progressions + voice-leading ✅
 
-Replace the hard-coded 4 progressions with a Markov walk over a wider
-chord vocabulary (the full `docs/lofi-study.md` §2 palette). Add a
-minimum-motion voicing solver so chord changes have proper voice-leading
-regardless of progression choice.
+**Harmony module (`packages/core/src/engines/ember/harmony/`)**
+- [x] `chords.ts` — 15-chord vocabulary as `{ rootPc, intervals, quality }`.
+      Diatonic to C major / A minor + `Fm6` and `Bbmaj7` borrowed colors.
+- [x] `markov.ts` — sparse `HAND_MATRIX` (hand-tuned per `lofi-study.md`
+      §3) + `MarkovChordWalk` class with `peek()` / `next()`.
+- [x] `dirichlet.ts` — `perturbMatrix(prior, rng, {alpha})`. Marsaglia–
+      Tsang gamma + Box–Muller normal + Stuart reduction for α<1.
+      Stage 6 default α=20 (subtle-but-audible).
+- [x] `voicing.ts` — pure `voiceChord(prev, chord)` solver. Common-tone
+      retention + greedy nearest-pitch in register E3–E5.
+- [x] `index.ts`
 
-Big lift; dramatically widens the seed space (from "4 starting
-progressions × tiny perturbations" to "tens of thousands of
-distinguishable harmonic trajectories"). Probably the most musically
-impactful single stage.
+**Engine wiring**
+- [x] `EngineState.currentChord` added (mutated by ChordScheduler, read
+      by MelodyScheduler filter).
+- [x] `ChordScheduler` rewritten: Markov walk + Dirichlet (seed children
+      `markov-config`, `markov-walk`) + voicing solver replace the static
+      `PROGRESSIONS` pick + `voiceChord` alteration.
+- [x] Pad root computed from `chord.rootPc + 36` (bass-register anchor)
+      instead of voicing[0]; root+fifth pattern preserved.
+- [x] `MelodyScheduler` blacklists pentatonic notes a semitone away
+      from any chord tone; falls back to chord tones in pentatonic's
+      register if filter empties. **Marked WIP — Stage 9 supersedes.**
+
+**Tests:** 60 (up from 45). All green.
+- 4 Markov tests (locked 16-chord walk + same-seed + reachability + start)
+- 5 Dirichlet tests (locked Am7 row at α=20 + same-seed + sum-to-1 +
+  support-preserved + α-monotonicity)
+- 5 voicing tests (seed voicing + register bounds + common-tone retention
+  + greedy octave + ascending output)
+- Chord scheduler test updated for new module surface; engine fingerprint
+  count unchanged (63) but first 6 events now reflect `Am7` start.
+
+**Design assumptions captured:**
+- `docs/harmony.md` (new) — full Stage 6 implementation surface (vocab,
+  Markov shape, Dirichlet sampler, voicing algorithm, melody-filter WIP).
+- `docs/seed-format.md` §7.3a extended — two new locked-sequence layers.
+
+**Open knobs (tune by listening test as data accumulates):**
+- Dirichlet α=20 (Stage 6 default). Bump higher → seeds harmonically
+  similar; lower → seeds diverge harder. Subjective.
+- `HAND_MATRIX` weights — biased per §3 but not validated against a
+  corpus. Python study (e.g. Hooktheory mining) deferred to Stage 7+.
+
+**Done when:** Markov + Dirichlet produce reproducible per-seed
+harmonic trajectories ✓; voicing solver gives audibly smooth voice-
+leading ✓; melody no longer fights the wider harmony ✓; all green ✓.
 
 ## Stage 7 (sketch) — Lorenz macro mood
 
