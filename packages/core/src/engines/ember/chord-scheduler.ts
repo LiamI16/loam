@@ -34,8 +34,16 @@ import {
 const BASS_LOW = 36;
 const BASS_HIGH = 50;
 
+/** Probability a held chord re-articulates an inner voice an octave up
+ * at bar 1 (mid-cycle). Per `docs/lofi-study.md` §11 voicing rotation —
+ * gives sustained chords a subtle shimmer without changing harmony.
+ * Tune by listening test; subtler than 0.3 felt static, busier than 0.3
+ * started to feel like comping. */
+const WOBBLE_PROBABILITY = 0.3;
+
 export class ChordScheduler implements SubScheduler {
   private rng!: Rng;
+  private wobbleRng!: Rng;
   private walk!: MarkovChordWalk;
   private prevVoicing: number[] | null = null;
   private prevPadRoot: number | null = null;
@@ -57,6 +65,7 @@ export class ChordScheduler implements SubScheduler {
     this.prevVoicing = null;
     this.prevPadRoot = null;
     this.rng = this.seed.rng();
+    this.wobbleRng = this.seed.child('voicing-wobble').rng();
     this.walk = new MarkovChordWalk(this.perturbed, this.seed.child('markov-walk').rng(), 'Am7');
     this.state.currentChord = CHORDS[this.walk.peek()];
   }
@@ -115,6 +124,29 @@ export class ChordScheduler implements SubScheduler {
         durationMs: padDurationMs,
         time,
       });
+
+      // Voicing wobble (§11 voicing rotation): at bar 1 of the chord
+      // cycle, with low probability, re-articulate one inner voice an
+      // octave up. The original voicing keeps sustaining underneath so
+      // this is additive — a brief shimmer rather than a re-voicing.
+      // Only triggers on chords with ≥ 3 voices (need an inner voice to
+      // pick). Always rolls the RNG so chord-skip determinism is stable.
+      const wobbleFires = this.wobbleRng.bernoulli(WOBBLE_PROBABILITY);
+      const innerIdxRoll = this.wobbleRng.nextFloat();
+      if (wobbleFires && voicing.length >= 3) {
+        const innerIdx = 1 + Math.floor(innerIdxRoll * (voicing.length - 2));
+        const wobblePitch = (voicing[innerIdx] as number) + 12;
+        const wobbleTime = time + this.secondsPerChord / 2;
+        const wobbleDurationMs = (this.secondsPerChord / 2 - 0.1) * 1000;
+        events.push({
+          kind: 'note',
+          channel: Channels.RHODES,
+          pitch: wobblePitch,
+          velocity: chordVelocity * 0.65,
+          durationMs: wobbleDurationMs,
+          time: wobbleTime,
+        });
+      }
 
       this.nextChordIdx++;
     }

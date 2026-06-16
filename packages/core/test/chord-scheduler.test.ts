@@ -28,11 +28,18 @@ describe('ChordScheduler', () => {
   it('chord changes happen every 2 bars (SECONDS_PER_CHORD apart)', () => {
     const s = new ChordScheduler(Seed.from(1n), { ...OPTS, currentChord: null });
     const events = s.scheduleUntil(0, SECONDS_PER_CHORD * 3 + 0.1);
-    const chordTimes = [
-      ...new Set(
-        events.filter((e) => e.kind === 'note' && e.channel === Channels.RHODES).map((e) => e.time),
-      ),
-    ].sort((a, b) => a - b);
+    // Filter to full-chord emissions: main chord notes share a timestamp
+    // with the whole voicing (≥ 3 notes); the voicing wobble emits a
+    // single RHODES note mid-cycle and would otherwise shorten the gap.
+    const rhodesByTime = new Map<number, number>();
+    for (const e of events) {
+      if (e.kind !== 'note' || e.channel !== Channels.RHODES) continue;
+      rhodesByTime.set(e.time, (rhodesByTime.get(e.time) ?? 0) + 1);
+    }
+    const chordTimes = [...rhodesByTime.entries()]
+      .filter(([, n]) => n >= 3)
+      .map(([t]) => t)
+      .sort((a, b) => a - b);
     expect(chordTimes.length).toBeGreaterThanOrEqual(2);
     for (let i = 1; i < chordTimes.length; i++) {
       expect((chordTimes[i] as number) - (chordTimes[i - 1] as number)).toBeCloseTo(

@@ -171,7 +171,9 @@ v2 seed-format break.
   groove-aware bassline.
 - **Real chord-aware melody.** §6 is a guardrail. Stage 9.
 - **Voicing variation.** No drop-2/drop-3, no chromatic approach
-  tones, no per-bar re-voicing of a held chord.
+  tones. (Per-cycle voicing wobble — single inner-voice octave-up
+  embellishment at bar 1 of a held chord — *is* implemented as of
+  the post-Stage-6 follow-up; see `ChordScheduler` `WOBBLE_PROBABILITY`.)
 - **Lorenz-biased matrix.** The Dirichlet perturbation is constant for
   the session. Stage 7 lets a Lorenz attractor reweight transition
   probabilities in slow motion.
