@@ -1,73 +1,55 @@
 # Loam — Claude Code context
 
-> Auto-loaded into every Claude Code session in this repo. Keep this file as
-> a *pointer*, not a duplicate — the source of truth lives in `docs/`.
+> Auto-loaded into every session. Keep thin — pointer, not duplicate.
+> Source of truth lives in `docs/` and `stage-list.md`.
 
-## What this project is (one paragraph)
+## What this project is
 
-Loam is an offline, infinite, on-device generative music engine that
-produces purely synthesized lo-fi audio for sustained focus / studying.
-Ships as kilobytes of code, not gigabytes of audio. Seed-based procedural
-generation (Minecraft worldgen, for sound). TypeScript on Web Audio, MIT-
-licensed, open-source-first. Two surfaces in v1: a hosted web demo and an
-Obsidian plugin, sharing one engine.
+Offline, infinite, on-device generative music engine producing purely
+synthesized lo-fi audio for sustained focus. Seed-based procedural
+generation ("Minecraft worldgen for sound"). TypeScript on Web Audio,
+MIT, open-source. Two surfaces in v1: hosted web demo + Obsidian
+plugin, sharing one engine.
 
-## Where to look first
+## What to read for what
 
-- **`docs/handoff.md`** — *the* canonical project context. Design principles,
-  v1 spec, tech stack, generation architecture, strategy. Start here.
-- **`docs/lofi-study.md`** — music-theory survey. Keys, modes, chord
-  vocabulary, progressions, voicings, drum patterns, subgenre archetypes,
-  the full ~50-knob seed-parameter space.
-- **`docs/dynamics-brainstorm.md`** — how the engine evolves over time
-  without producing salient moments. Generator primitives, timescale
-  layering, attractor integration, per-layer dynamics, transition mechanics.
-- **`docs/ornaments.md`** — the carve-out from the "no salient moments"
-  rule. Cox+refractory point process for *when* an ornament fires; per-type
-  inhibitory rate for *what* fires.
-- **`docs/gaps.md`** — running punch list of unresolved questions,
-  contradictions, and specs still to write. Check before assuming something
-  is decided.
-- **`docs/stack.md`** — tech stack and project structure (monorepo layout,
-  what Tone.js is, all the substacks, minimum-viable setup).
-- **`docs/seed-format.md`** — seed format, PRNG choice (PCG32), sub-seed
-  derivation (splitmix64). The contract behind "same seed → same soundscape."
-- **`docs/event-protocol.md`** — the typed event interface across the
-  core/adapter split, time semantics, lookahead scheduling.
-- **`docs/obsidian-brainstorm.md`** — early notes on the Obsidian plugin
-  surface (stub).
+- **`stage-list.md`** — active development checklist. **Check first.**
+  Done items in the summary table at top; remaining work in
+  impact-ordered backlog.
+- **`docs/handoff.md`** — canonical project context (design principles,
+  v1 spec, architecture, strategy).
+- **`docs/seed-format.md`** — seed contract + locked-sequence layers
+  (the seed-format compatibility surface).
+- **`docs/event-protocol.md`** — typed engine↔adapter event contract.
+- **`docs/gaps.md`** — unresolved questions; check before assuming
+  something's decided.
+- **Other `docs/*.md`** — discoverable via `ls docs/`. Read on demand
+  when working in a relevant area (harmony, dynamics, ornaments,
+  lofi-study, external-review, stack).
+- **`phase1-stage-list.md`** — historical Phase 1 log. Don't edit.
 
-## Active build tracking
+## Locked design decisions
 
-- **`stage-list.md`** (repo root) — the actual development checklist.
-  Flat ordered list of remaining features, ranked by listening impact.
-  Always check this first when picking up work. Promote stages from
-  "Backlog" to "Next up" as the current one finishes; move completed
-  stages into the "Done" summary table.
-- **`phase1-stage-list.md`** (repo root) — historical record of the
-  Phase 1 prototype port (Stages 1–4). Reference only; don't edit.
+Don't relitigate without explicit ask:
 
-## Working notes for Claude
+- Pure synthesis only (no audio samples)
+- TypeScript on Web Audio at runtime; Python OK as build-time tool
+- MIT open-source
+- Lofi for v1, framing **loose** — adjacent sensibilities (Ghibli /
+  jazz-piano / soft electronica) encouraged for variation space
+- No ML in v1
+- Core/adapter split: `@loam/core` framework-agnostic;
+  `@loam/synth-tone` (Tone.js) is one adapter
 
-- **`docs/` is where notes go.** Don't drop new markdown at the repo root.
-- **`ember-generative-study.html`** is the existing single-file prototype.
-  Treat it as reference / specimen; the modular codebase under `core/` is
-  the v1 deliverable, not a refactor of the HTML.
-- **`core/` and `utils/`** exist but are currently empty — the engine code
-  hasn't started.
-- **Locked design decisions** (don't relitigate without explicit ask): pure
-  synthesis only (no samples), TypeScript on Web Audio (no Python at
-  runtime), MIT open-source, lofi-only for v1, no ML in v1, core/adapter
-  split with `@loam/core` framework-agnostic.
-- **`docs/gaps.md` lists open questions** — when one comes up in
-  conversation, resolve it, then move the decision into the relevant spec
-  doc and delete from gaps.
+## Working notes
 
-## House style for this repo
-
-- Keep docs in prose with tables where useful; this isn't a code-comments-
-  only project — the design thinking *is* the artifact.
-- Each doc states its purpose in a blockquote at the top.
-- Cross-link related docs by relative path (`docs/foo.md`).
-- "Knob" is the project's word for a seed-controlled parameter — use it
-  consistently.
+- **`docs/` for design notes**, never the repo root. Only `.md` files
+  allowed at root: `README.md`, `CLAUDE.md`, `stage-list.md`,
+  `phase1-stage-list.md`.
+- **"Knob"** = seed-controlled parameter.
+- **Engine fingerprint** (`packages/core/test/ember-engine.test.ts`)
+  pinned at `Seed.from(42n)` with `bpm: 74`. Any change that shifts
+  it is a deliberate seed-format break — document in commit message
+  and `docs/seed-format.md` §7.3a.
+- `ember-generative-study.html` is the original prototype; reference
+  specimen, not the v1 deliverable.
