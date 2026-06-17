@@ -45,6 +45,7 @@ Compact summary — full implementation notes in the linked docs.
 | Drum rewrite | Per-bar variation + per-voice micro-timing + velocity accents + mild 16th-swing | See below |
 | Bass scheduler | Separate bass voice, sparse root-on-beat-1 + maybe-fifth-on-beat-3 pattern | See below |
 | Stereo + per-instrument reverb | Send/return mixer; per-instrument pan + reverb send level | See below |
+| Chord comping (A: rhythm) | Bar-grid scheduler; {2,4}-bar slots; beat-1 anchor + density-driven hits + pickup + rare off-beat sync. Folded "B-lite": keys release 2.6 → 0.5 s. | See below |
 
 **Drum rewrite details:** `drum-scheduler.ts` rewritten. Per-voice
 constant micro-timing (snare drag +15 ms, hat slight ahead −3 ms,
@@ -110,51 +111,75 @@ sorted after the pad notes; falls outside the first-6 lock window).
 
 ## Next up
 
-### Chord comping + voicing variety
+### Chord comping — voicing variety (B + C + D)
 
-Promoted after stereo (2026-06-17 listening pass): user flagged
-"background chord rings in your ear" during silences. Direct fix is
-replacing the one-long-sustain chord-cycle model with rhythmic
-comping. Bundles with the previously-planned voicing variety since
-both rewrite the same emission logic in `chord-scheduler.ts`.
+A (rhythm) is done. Remaining work in the comping bundle:
 
-**Bundle (all touch `chord-scheduler.ts` + `harmony/voicing.ts`):**
+- **Hit envelope refinement.** Per-beat duration variation (beat 1
+  vs beat 3 vs pickup vs sync); possible per-seed envelope shape.
+  A folded a minimal piece (keys release 2.6 → 0.5 s) so comping
+  reads as comping; full envelope work still open.
+- **Voicing micro-variation per hit within a slot.** When the chord
+  re-articulates on bar 2 / 3 / 4 of a slot, slight voicing change
+  from bar 1 (drop a voice, swap inversion, add or remove the 9).
+- **Voicing archetype variation per chord re-occurrence.** Close /
+  spread / rootless / quartal picked per occurrence. Weighted to
+  favor close with rarer excursions. Per-seed weight perturbation
+  (Dirichlet, like the Markov layer).
+- **Altered dominants** (`7♯5`, `7♭5`, `7♭9`). Vocabulary expansion
+  in `harmony/chords.ts`.
+- **Chromatic approach tones.** Occasional chromatic voice motion
+  at slot transition.
 
-1. **Comping rhythm.** Chord hits beat 1 of every bar (always);
-   maybe beat 3 (per-bar roll). Per-cycle variation rolled like the
-   drum bar variations — some bars denser, some sparser. Replaces
-   the one-sustained-voicing-per-cycle model.
-2. **Chord-cut envelope.** Each hit holds ~600–1000 ms (half-beat to
-   one beat), not the current `secondsPerChord − 0.25 s` (~6 s).
-   Each hit is punchy and cuts off; silence between hits is the
-   point — *this* is what fixes the ringing-in-ear problem.
-3. **Voicing micro-variation per hit within a cycle.** When the
-   chord re-articulates at bar 2 beat 1, slight voicing change from
-   bar 1 beat 1 (drop a voice, swap inversion, add or remove the
-   9th). Subtle.
-4. **Voicing archetype variation per chord re-occurrence.** Close /
-   spread / rootless / quartal picked per occurrence when the same
-   chord returns. Weighted to favor close (default) with rarer
-   excursions.
-5. **Deliberate silence between hits.** Shorter envelope (#2) +
-   comping pattern (#1) → natural rests. The space is the feature.
-6. **Altered dominants** (vocabulary expansion). `7♯5`, `7♭5`, `7♭9`
-   added to `harmony/chords.ts`; soft chromatic-friction resolutions
-   per `docs/external-review.md` §A.4.
-7. **Chromatic approach tones.** Occasional chromatic voice motion
-   at chord change — one voice slides chromatically into its new
-   target instead of jumping.
-
-**Arpeggiation explicitly NOT in this stage.** Arpeggiation belongs
-in the Melody rewrite stage as one melodic strategy (chord-tone
-broken sequences). Putting arpeggiation in the chord scheduler
-would collide with the melody scheduler (two simultaneous melodic
-voices = noodling) and would force per-seed chord-mode coupling
-that breaks scheduler independence. Discussed and ruled out
-2026-06-17.
+**Design constraint — read first:** every per-seed parameter must
+follow the hybrid stack in
+[docs/seed-identity.md](docs/seed-identity.md). Universal rules +
+fBm drift + per-seed shape modifiers + couplings + mix bias. No
+per-seed fixed knobs (except under the rare-event carve-out), no
+categorical archetypes.
 
 **Files:** `chord-scheduler.ts`, `harmony/voicing.ts`,
-`harmony/chords.ts`, `harmony/markov.ts`, voicing tests, chord tests.
+`harmony/chords.ts`, voicing tests.
+
+---
+
+## Recently done — chord comping rhythm (A)
+
+Bar-grid rewrite of `chord-scheduler.ts` (2026-06-17). Replaces
+the one-sustained-voicing-per-Markov-step model with rhythmic
+comping. Decisions ironed out via discussion before code:
+
+- **Slot length** ∈ {2, 4} bars per chord, drawn per slot biased by
+  a slow fBm stream (`chord-slot-bias`, range [0.2, 0.6], slowest
+  octave 120 s). Per-seed shape: mean offset + depth modifier.
+- **Hit positions.** Beat 1 of every bar always fires (tightened
+  same-day after listen pass — earlier "roll on subsequent bars"
+  produced up to ~13 s of chord silence in low-density patches and
+  read as "the music stopped" rather than "breathing room"). Beat 3
+  of every bar rolls against a density fBm stream (`chord-density`,
+  range [0.2, 0.65] mean 0.35, slowest octave 90 s). Range and mean
+  tightened from initial [0.3, 0.9] mean 0.6 after a second listen
+  pass flagged the chord layer as busier than canonical lofi.
+- **Pickup** ("and of 4" of the slot's last bar) at universal 15%,
+  voicing the *next* chord (anticipation). Velocity × 0.7, duration
+  0.5 beat.
+- **Off-beat syncopation** (beat 2.5) per-seed Beta(2, 5)·0.05
+  fixed-rate draw; substitutes for beat-1 of the bar; 16-bar
+  refractory period prevents clustering. Carve-out from the
+  "no per-seed fixed value" rule because drift would be invisible
+  at this event interval — see seed-identity.md §"Carve-out".
+- **Hit durations** beat-relative: beat 1 = 1 beat, beat 3 = 0.75,
+  pickup = 0.5, sync = 0.75 (computed from BPM at emit).
+- **Folded "B-lite":** keys synth release shortened in `lofi.ts`
+  from 2.6 s to 0.5 s so comping hits actually cut. Full per-beat /
+  per-seed envelope work in B is still open.
+- **Engine fingerprint reset** count 108 → 112; pad now emits ahead
+  of rhodes at slot starts; documented in `docs/seed-format.md`
+  §7.3a.
+
+First exercise of the seed-identity stack: slot-bias and density
+both use §1 (universal fBm) + §2 (per-seed shape); sync rate uses
+the rare-event carve-out.
 
 ---
 
@@ -176,6 +201,40 @@ only (pad goes wide via the widener instead). `fx.evoFilter.cutoff`,
 ---
 
 ## Backlog (ordered by listening impact)
+
+### Mix-bias per seed — chord-dominance rebalancer
+
+Small standalone stage. The chord layer is structurally the busiest
+element (4-voice polyphonic Rhodes hits on every bar) and currently
+sits at a fixed −11 dB. Per-seed mix bias lets some seeds comp at
+−14 dB ("chords-in-back") and others at −9 dB ("chords-forward"),
+giving each seed a recognizable production personality without
+changing the music itself. The §4 ("orchestration / mix bias")
+lever of [docs/seed-identity.md](docs/seed-identity.md) — applied
+for the first time.
+
+**Bundle:**
+
+- Per-seed `chord-mix-bias` continuous draw in (e.g.) [−4, +4] dB.
+  Continuous distribution, no buckets.
+- Apply at engine init via a one-shot `ParamEvent` (or a new
+  `chord.volume` adapter param) on top of the chain's static dB.
+- Audit pad and bass volumes — likely candidates for the same
+  treatment if chord-bias alone doesn't fully rebalance.
+
+**Why now (queued after B + C):** revisit chord dominance after
+the melody rewrite (B) and voicing variety (C, including rootless
+voicings — naturally lighter weight). Rootless voicings + a better
+melody may cover most of the dominance problem on their own; mix-
+bias becomes the residual fix and a per-seed identity hook.
+
+Discussed 2026-06-17 during chord-comping listen pass — see
+`docs/seed-identity.md` §4 for the rationale.
+
+**Files:** `chains/lofi.ts`, `ember.ts` (per-seed draw + param
+emit), new `chord.volume` adapter param.
+
+---
 
 ### Chord echo / delay send (small post-comping tune-up)
 

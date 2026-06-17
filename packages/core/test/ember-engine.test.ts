@@ -68,15 +68,24 @@ describe('EmberEngine', () => {
     // the instantaneous density above 0 (clamped at 0). So we verify the
     // weaker but still meaningful invariant: mean=0 produces far fewer
     // melody notes than mean=1 over the same window.
+    //
+    // Counting note: chord-comping (post bar-grid rewrite) emits
+    // voicings of ≥3 simultaneous Rhodes notes; the melody scheduler
+    // emits a single Rhodes note at a time. Counting Rhodes timestamps
+    // with ≤2 voices at them isolates melody.
     const melodyCount = (mean: number) => {
       const e = new EmberEngine(Seed.from(42n), { density: mean });
       const events = e.scheduleUntil(60);
-      return events.filter(
-        (ev) =>
-          ev.kind === 'note' &&
-          (ev as { channel: string }).channel === 'rhodes' &&
-          (ev as { durationMs: number }).durationMs < 2000,
-      ).length;
+      const rhodesByTime = new Map<number, number>();
+      for (const ev of events) {
+        if (ev.kind !== 'note') continue;
+        if ((ev as { channel: string }).channel !== 'rhodes') continue;
+        const t = ev.time;
+        rhodesByTime.set(t, (rhodesByTime.get(t) ?? 0) + 1);
+      }
+      let count = 0;
+      for (const n of rhodesByTime.values()) if (n <= 2) count += n;
+      return count;
     };
     const high = melodyCount(1.0);
     const low = melodyCount(0);
@@ -172,15 +181,19 @@ describe('EmberEngine', () => {
     // This fingerprint locks the engine composition (chord pick, voicing,
     // pad routing, drum grid). If it changes, every saved seed shifts —
     // treat as a deliberate compat break and bump the seed format version.
+    // Reset on 2026-06-17 with the chord-comping bar-grid rewrite —
+    // see docs/seed-format.md §7.3a. Pad now precedes rhodes voicing
+    // at slot starts because the pad emission happens during the
+    // slot-advance step (before per-bar hit rolls).
     expect({ count: events.length, fingerprint }).toEqual({
-      count: 108,
+      count: 116,
       fingerprint: [
         'n:hat:42:-0.0030',
+        'n:pad:45:0.0000',
+        'n:pad:52:0.0000',
         'n:rhodes:60:0.0000',
         'n:rhodes:64:0.0000',
         'n:rhodes:67:0.0000',
-        'n:rhodes:69:0.0000',
-        'n:pad:45:0.0000',
       ],
     });
   });

@@ -3,17 +3,19 @@ import { Channels, ChordScheduler, Seed } from '../src/index.js';
 import { makeState } from './_helpers.js';
 
 const OPTS = makeState();
-const SECONDS_PER_CHORD = (60 / 74) * 4 * 2; // 2 bars in 4/4 at 74 BPM
+const SECONDS_PER_BEAT = 60 / 74; // 74 BPM
+const SECONDS_PER_BAR = SECONDS_PER_BEAT * 4;
 
-describe('ChordScheduler', () => {
-  it('emits chord notes on RHODES and pad notes on PAD at chord time', () => {
+describe('ChordScheduler (comping)', () => {
+  it('emits chord voicing on RHODES and pad root+fifth on PAD at t=0', () => {
     const s = new ChordScheduler(Seed.from(1n), { ...OPTS, currentChord: null });
     const events = s.scheduleUntil(0, 1.0);
     const atZero = events.filter((e) => e.time === 0);
     const rhodes = atZero.filter((e) => e.kind === 'note' && e.channel === Channels.RHODES);
     const pad = atZero.filter((e) => e.kind === 'note' && e.channel === Channels.PAD);
-    expect(rhodes.length).toBeGreaterThanOrEqual(3); // 4-note voicing
-    expect(pad).toHaveLength(2); // root + fifth
+    // First bar of first slot always anchors beat 1 (voicing emitted)
+    expect(rhodes.length).toBeGreaterThanOrEqual(3);
+    expect(pad).toHaveLength(2);
   });
 
   it('pad pitches are root + perfect fifth (7 semitones)', () => {
@@ -25,27 +27,62 @@ describe('ChordScheduler', () => {
     expect(b.pitch - a.pitch).toBe(7);
   });
 
-  it('chord changes happen every 2 bars (SECONDS_PER_CHORD apart)', () => {
-    const s = new ChordScheduler(Seed.from(1n), { ...OPTS, currentChord: null });
-    const events = s.scheduleUntil(0, SECONDS_PER_CHORD * 3 + 0.1);
-    // Filter to full-chord emissions: main chord notes share a timestamp
-    // with the whole voicing (≥ 3 notes); the voicing wobble emits a
-    // single RHODES note mid-cycle and would otherwise shorten the gap.
-    const rhodesByTime = new Map<number, number>();
-    for (const e of events) {
-      if (e.kind !== 'note' || e.channel !== Channels.RHODES) continue;
-      rhodesByTime.set(e.time, (rhodesByTime.get(e.time) ?? 0) + 1);
+  it('chord-change boundaries land on bar grid (multiples of one bar)', () => {
+    // Each chord slot is 2 or 4 bars; PAD events mark slot starts.
+    // Therefore every PAD-event time is an integer multiple of secondsPerBar.
+    const s = new ChordScheduler(Seed.from(7n), { ...OPTS, currentChord: null });
+    const events = s.scheduleUntil(0, SECONDS_PER_BAR * 12);
+    const padTimes = [
+      ...new Set(
+        events
+          .filter((e) => e.kind === 'note' && e.channel === Channels.PAD)
+          .map((e) => e.time),
+      ),
+    ].sort((a, b) => a - b);
+    expect(padTimes.length).toBeGreaterThanOrEqual(3);
+    for (const t of padTimes) {
+      const barUnits = t / SECONDS_PER_BAR;
+      expect(barUnits).toBeCloseTo(Math.round(barUnits), 6);
     }
-    const chordTimes = [...rhodesByTime.entries()]
-      .filter(([, n]) => n >= 3)
-      .map(([t]) => t)
-      .sort((a, b) => a - b);
-    expect(chordTimes.length).toBeGreaterThanOrEqual(2);
-    for (let i = 1; i < chordTimes.length; i++) {
-      expect((chordTimes[i] as number) - (chordTimes[i - 1] as number)).toBeCloseTo(
-        SECONDS_PER_CHORD,
-        4,
+  });
+
+  it('slot lengths come only from {2, 4} bars', () => {
+    const s = new ChordScheduler(Seed.from(11n), { ...OPTS, currentChord: null });
+    const events = s.scheduleUntil(0, SECONDS_PER_BAR * 40);
+    const padTimes = [
+      ...new Set(
+        events
+          .filter((e) => e.kind === 'note' && e.channel === Channels.PAD)
+          .map((e) => e.time),
+      ),
+    ].sort((a, b) => a - b);
+    for (let i = 1; i < padTimes.length; i++) {
+      const gapBars = ((padTimes[i] as number) - (padTimes[i - 1] as number)) / SECONDS_PER_BAR;
+      const rounded = Math.round(gapBars);
+      expect([2, 4]).toContain(rounded);
+      expect(gapBars).toBeCloseTo(rounded, 6);
+    }
+  });
+
+  it('first bar of each slot always emits beat-1 voicing (anchor rule)', () => {
+    const s = new ChordScheduler(Seed.from(3n), { ...OPTS, currentChord: null });
+    const events = s.scheduleUntil(0, SECONDS_PER_BAR * 20);
+    const padTimes = [
+      ...new Set(
+        events
+          .filter((e) => e.kind === 'note' && e.channel === Channels.PAD)
+          .map((e) => e.time),
+      ),
+    ];
+    // Each pad time should have a simultaneous Rhodes voicing (≥3 notes).
+    for (const t of padTimes) {
+      const rhodesAtT = events.filter(
+        (e) =>
+          e.kind === 'note' &&
+          e.channel === Channels.RHODES &&
+          Math.abs(e.time - t) < 1e-6,
       );
+      expect(rhodesAtT.length).toBeGreaterThanOrEqual(3);
     }
   });
 
@@ -71,19 +108,20 @@ describe('ChordScheduler', () => {
     expect(state.currentChord).not.toBeNull();
   });
 
-  it('different seeds produce different perturbed walks (different first chord cycles)', () => {
+  it('different seeds produce different harmonic openings', () => {
+    // 16 seeds × Markov walk + per-seed Dirichlet + per-seed slot
+    // lengths + per-seed comping density should produce distinguishable
+    // outputs in the first 8 bars.
     const fps = new Set<string>();
     for (let i = 1; i <= 16; i++) {
       const s = new ChordScheduler(Seed.from(BigInt(i)), { ...OPTS, currentChord: null });
-      const events = s.scheduleUntil(0, SECONDS_PER_CHORD * 4 + 0.1);
-      const rhodes = events
+      const events = s.scheduleUntil(0, SECONDS_PER_BAR * 8);
+      const fp = events
         .filter((e) => e.kind === 'note' && e.channel === Channels.RHODES)
-        .map((e) => (e as { pitch: number }).pitch)
+        .map((e) => `${(e as { pitch: number }).pitch}@${e.time.toFixed(2)}`)
         .join(',');
-      fps.add(rhodes);
+      fps.add(fp);
     }
-    // 16 seeds × Markov walk + per-seed Dirichlet should produce many
-    // distinguishable harmonic openings.
-    expect(fps.size).toBeGreaterThanOrEqual(5);
+    expect(fps.size).toBeGreaterThanOrEqual(8);
   });
 });

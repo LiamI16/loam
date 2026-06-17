@@ -1,5 +1,7 @@
 import { Channels } from '../../channels.js';
 import type { EngineEvent } from '../../events.js';
+import { Fbm1D } from '../../noise/fbm.js';
+import { FbmParam } from '../../params/param-stream.js';
 import type { Rng } from '../../rng/rng.js';
 import type { Seed } from '../../rng/seed.js';
 import type { EngineState, SubScheduler } from './ember.js';
@@ -7,6 +9,7 @@ import {
   blendChordWeights,
   CHORDS,
   type ChordName,
+  type ChordSymbol,
   HAND_MATRIX,
   MarkovChordWalk,
   modesAtPosition,
@@ -16,88 +19,209 @@ import {
 } from './harmony/index.js';
 
 /**
- * Two-bar chord vamp + soft pad on root + fifth. Stage 6: chords come from
- * a Markov walk over the harmony vocabulary (seed-perturbed per Dirichlet)
- * with a min-motion voicing solver providing voice-leading.
+ * Chord comping scheduler. Replaces the prototype's one-sustained-
+ * voicing-per-cycle model with rhythmic bar-grid emission. See
+ * `stage-list.md` "Next up — chord comping" for the full design
+ * and `docs/seed-identity.md` for the per-seed parameter contract.
  *
- *   - `seed.child('markov-config')` → Dirichlet perturbation of `HAND_MATRIX`.
- *   - `seed.child('markov-walk')`   → the walk's step decisions.
- *   - On every chord change, mutates `state.currentChord` so other
- *     sub-schedulers (e.g. melody filter) can read the active harmony.
+ * Per-bar emission grid. Within each chord slot (2 or 4 bars):
+ *   - Beat 1 of the slot's first bar: always (anchors the harmony).
+ *   - Beat 1 of subsequent bars: rolled by `density` fBm stream.
+ *   - Beat 3 of every bar: rolled by `density` fBm stream.
+ *   - "And of 4" of the slot's last bar: 15% pickup, plays the
+ *     *next* chord (anticipates the harmony change).
+ *   - Beat 2.5 off-beat syncopation: rare per-seed Beta-drawn rate;
+ *     substitutes for that bar's beat-1 hit; 16-bar refractory.
  *
- * Pad still plays root + 5 for 4 bars per chord change. Voicing solver
- * applies to the Rhodes chord notes only.
+ * Slot length is 2 or 4 bars, drawn per slot biased by a slow fBm
+ * stream `chord.slot-bias` (per-seed shape modifies mean + range).
+ *
+ * Pad emits root + fifth at slot start, sustaining the slot length.
+ *
+ * Voicing micro-variation (per-hit) and archetype variation
+ * (per-occurrence) are deferred — every hit within a slot uses the
+ * slot's base voicing for now.
+ *
+ * Per-seed identity: this scheduler exercises three layers of
+ * `docs/seed-identity.md`:
+ *   - §1 universal fBm drift: density + slot-bias both drift.
+ *   - §2 per-seed fBm shape: mean + depth modifiers per seed.
+ *   - "Rare-event carve-out": off-beat sync rate is a per-seed
+ *     Beta-drawn fixed value (drift would be invisible at ~70 bar
+ *     mean interval).
+ *
+ * Determinism: seed children
+ *   - `markov-config`              — Dirichlet perturbation of HAND_MATRIX
+ *   - `markov-walk`                — Markov walk's step decisions
+ *   - `voicing-register-config`    — per-seed home register
+ *   - `chord-slot-bias-fbm`        — fBm noise for slot-length bias
+ *   - `chord-slot-bias-config`     — per-seed mean + depth modifiers
+ *   - `chord-slot-length`          — per-slot {2, 4} rolls
+ *   - `chord-density-fbm`          — fBm noise for beat-1/beat-3 firing
+ *   - `chord-density-config`       — per-seed mean + depth modifiers
+ *   - `chord-pickup`               — pickup rolls (per slot transition)
+ *   - `chord-sync-config`          — per-seed Beta-drawn sync rate
+ *   - `chord-sync`                 — per-bar sync rolls
+ *   - `chord-velocity`             — velocity jitter
  */
-/** Bass register for the pad root, MIDI: C2 (36) – D3 (50). Wide enough
- * to give every chord root an in-range octave, narrow enough that the
- * smoothing keeps motion under a tritone per change. Floor is C2 so we
- * never push pad fundamentals into sub-bass (where Web Audio reproduction
- * gets murky on smaller speakers). */
+
+/** Bass register for the pad root, MIDI C2 (36) – D3 (50). */
 const BASS_LOW = 36;
 const BASS_HIGH = 50;
 
-/** Voicing register characteristics. Stage 6 set this as a fixed
- * per-seed shift in [-11, +13]. Stage 7a splits the same total
- * envelope into two contributions: a per-seed base shift (chosen at
- * construction, defines the seed's home register) and a position-y
- * driven drift (slow exploration around that home during playback).
- * Combined reach: [-11, +13] semitones around MIDI 64, unchanged.
- *
- * Split: base ∈ [-5, +7], drift = ±6 → total ∈ [-11, +13]. Base range
- * shrunk from [-11, +13] to leave drift headroom while preserving the
- * proven envelope. See `current-stage-list.md` Stage 7a notes for the
- * tradeoff vs option C ("no per-seed base, register entirely
- * position-driven") which is parked for a future tuning pass — more
- * philosophically aligned with the position-space framing but loses
- * the per-seed register identity at t=0. */
+/** Voicing register characteristics (carried over from prototype). */
 const REGISTER_WIDTH = 24;
 const REGISTER_CENTER_DEFAULT = 64;
 const REGISTER_CENTER_MIN_SHIFT = -5;
 const REGISTER_CENTER_MAX_SHIFT = 7;
 const REGISTER_DRIFT_AMPLITUDE = 6;
 
-/** Probability a held chord re-articulates an inner voice an octave up
- * at bar 1 (mid-cycle). Per `docs/lofi-study.md` §11 voicing rotation —
- * gives sustained chords a subtle shimmer without changing harmony.
- * Tune by listening test; subtler than 0.3 felt static, busier than 0.3
- * started to feel like comping. */
-const WOBBLE_PROBABILITY = 0.3;
+/** Slot-length palette. Per-slot rolled between {2, 4} bars. */
+const SHORT_SLOT_BARS = 2;
+const LONG_SLOT_BARS = 4;
+
+/** Slot-bias fBm: probability of a 4-bar (vs 2-bar) slot.
+ * Universal range. Per-seed mean offset + depth modifier on top. */
+const SLOT_BIAS_MEAN = 0.4;
+const SLOT_BIAS_DEPTH = 0.2;
+const SLOT_BIAS_MIN = 0.2;
+const SLOT_BIAS_MAX = 0.6;
+const SLOT_BIAS_BASE_FREQ = 1 / 120; // slowest octave ~120 s
+const SLOT_BIAS_MEAN_SHAPE_RANGE = 0.1;
+const SLOT_BIAS_DEPTH_SHAPE_RANGE: [number, number] = [0.1, 0.25];
+
+/** Density fBm: probability beat-3 fires. (Beat 1 is anchored on every
+ * bar regardless.) Range [0.2, 0.65], slowest octave ~90 s. Calmer
+ * than the initial [0.3, 0.9] which made the chord layer feel busier
+ * than canonical lofi — beat 3 now fires ~35% on average, leaving
+ * meaningful space between hits even in dense stretches. Per-seed
+ * mean + depth still apply on top. */
+const DENSITY_MEAN = 0.35;
+const DENSITY_DEPTH = 0.25;
+const DENSITY_MIN = 0.2;
+const DENSITY_MAX = 0.65;
+const DENSITY_BASE_FREQ = 1 / 90;
+const DENSITY_MEAN_SHAPE_RANGE = 0.1;
+const DENSITY_DEPTH_SHAPE_RANGE: [number, number] = [0.15, 0.35];
+
+/** Pickup ("and of 4" of slot's last bar). Universal rate. */
+const PICKUP_PROB = 0.15;
+
+/** Off-beat syncopation (beat 2.5). Per-seed Beta(2,5)-scaled rate;
+ * refractory blocks back-to-back hits within `SYNC_REFRACTORY_BARS`. */
+const SYNC_RATE_MAX = 0.05;
+const SYNC_REFRACTORY_BARS = 16;
+const BETA_A = 2;
+const BETA_B = 5;
+
+/** Velocity jitter (matches drum/bass schedulers). */
+const VEL_BASE = 0.55;
+const VEL_JITTER = 0.08;
+const PICKUP_VEL_MULTIPLIER = 0.7;
+
+/** Hit durations in beats (multiplied by `60 / bpm` at emit). */
+const BEAT_1_DURATION_BEATS = 1.0;
+const BEAT_3_DURATION_BEATS = 0.75;
+const PICKUP_DURATION_BEATS = 0.5;
+const SYNC_DURATION_BEATS = 0.75;
+
+/** Pad velocity. */
+const PAD_VELOCITY = 0.4;
 
 export class ChordScheduler implements SubScheduler {
-  private rng!: Rng;
-  private wobbleRng!: Rng;
+  private hitRng!: Rng;
+  private slotLengthRng!: Rng;
+  private pickupRng!: Rng;
+  private syncRng!: Rng;
+  private velocityRng!: Rng;
   private walk!: MarkovChordWalk;
-  private prevVoicing: number[] | null = null;
+
+  /** Bar counter — advances by 1 each bar emitted. */
+  private nextBarIdx = 0;
+  /** Bar index where the current chord slot started. */
+  private currentSlotStartBar = 0;
+  /** Length of the current chord slot in bars (2 or 4). */
+  private currentSlotBars = SHORT_SLOT_BARS;
+  /** Active chord and its voicing for the current slot. */
+  private currentChord: ChordSymbol | null = null;
+  private currentVoicing: number[] | null = null;
+  /** Pre-stepped lookahead: the chord starting at the next slot.
+   * Computed at current slot start so pickups can voice it ahead. */
+  private nextChord: ChordSymbol | null = null;
+  private nextVoicing: number[] | null = null;
+  /** Pad-root continuity tracker for nearest-octave selection. */
   private prevPadRoot: number | null = null;
-  private nextChordIdx = 0;
+  /** Bar index of the most recent off-beat sync hit; used for
+   * the refractory check. Negative sentinel means "never fired". */
+  private lastSyncBar = -SYNC_REFRACTORY_BARS - 1;
+
   private readonly perturbed: TransitionMatrix;
-  private readonly secondsPerChord: number;
-  /** Per-seed home register center, in MIDI semitones. The drift from
-   * `state.position.y` rides on top of this at chord-change time. */
+  private readonly secondsPerBeat: number;
+  private readonly secondsPerBar: number;
   private readonly homeCenter: number;
+  private readonly slotBiasStream: FbmParam;
+  private readonly densityStream: FbmParam;
+  /** Per-seed Beta-drawn sync rate. Drift would be invisible at
+   * this event interval — see seed-identity.md carve-out. */
+  private readonly syncRate: number;
 
   constructor(
     private readonly seed: Seed,
     private readonly state: EngineState,
   ) {
-    this.secondsPerChord = (60 / state.bpm) * 4 * 2; // 2 bars in 4/4
+    this.secondsPerBeat = 60 / state.bpm;
+    this.secondsPerBar = this.secondsPerBeat * 4;
     this.perturbed = perturbMatrix(HAND_MATRIX, seed.child('markov-config').rng(), { alpha: 20 });
-    // Per-seed voicing register fingerprint: integer base shift so the
-    // chord pitches fall on whole semitones at t=0. Drift is added per
-    // chord change from position.y (float OK there — register low/high
-    // are computed as Math.floor / Math.ceil bounds).
+
+    // Per-seed voicing register fingerprint (unchanged from prototype).
     const registerRng = seed.child('voicing-register-config').rng();
     const baseShift = registerRng.nextInt(REGISTER_CENTER_MIN_SHIFT, REGISTER_CENTER_MAX_SHIFT);
     this.homeCenter = REGISTER_CENTER_DEFAULT + baseShift;
+
+    // Slot-length-bias stream: fBm + per-seed mean offset + per-seed depth.
+    const slotCfgRng = seed.child('chord-slot-bias-config').rng();
+    const slotMeanOffset = slotCfgRng.nextRange(-SLOT_BIAS_MEAN_SHAPE_RANGE, SLOT_BIAS_MEAN_SHAPE_RANGE);
+    const slotDepth = slotCfgRng.nextRange(SLOT_BIAS_DEPTH_SHAPE_RANGE[0], SLOT_BIAS_DEPTH_SHAPE_RANGE[1]);
+    this.slotBiasStream = new FbmParam(new Fbm1D(seed.child('chord-slot-bias-fbm')), {
+      mean: SLOT_BIAS_MEAN + slotMeanOffset,
+      depth: slotDepth,
+      baseFreq: SLOT_BIAS_BASE_FREQ,
+      minValue: SLOT_BIAS_MIN,
+      maxValue: SLOT_BIAS_MAX,
+    });
+    // Density stream: same structural pattern.
+    const densCfgRng = seed.child('chord-density-config').rng();
+    const densMeanOffset = densCfgRng.nextRange(-DENSITY_MEAN_SHAPE_RANGE, DENSITY_MEAN_SHAPE_RANGE);
+    const densDepth = densCfgRng.nextRange(DENSITY_DEPTH_SHAPE_RANGE[0], DENSITY_DEPTH_SHAPE_RANGE[1]);
+    this.densityStream = new FbmParam(new Fbm1D(seed.child('chord-density-fbm')), {
+      mean: DENSITY_MEAN + densMeanOffset,
+      depth: densDepth,
+      baseFreq: DENSITY_BASE_FREQ,
+      minValue: DENSITY_MIN,
+      maxValue: DENSITY_MAX,
+    });
+    // Sync rate: per-seed Beta(2,5)·0.05 fixed draw.
+    const syncCfgRng = seed.child('chord-sync-config').rng();
+    this.syncRate = sampleBeta(syncCfgRng, BETA_A, BETA_B) * SYNC_RATE_MAX;
+
     this.reset();
   }
 
   reset(): void {
-    this.nextChordIdx = 0;
-    this.prevVoicing = null;
+    this.nextBarIdx = 0;
+    this.currentSlotStartBar = 0;
+    this.currentSlotBars = SHORT_SLOT_BARS;
+    this.currentChord = null;
+    this.currentVoicing = null;
+    this.nextChord = null;
+    this.nextVoicing = null;
     this.prevPadRoot = null;
-    this.rng = this.seed.rng();
-    this.wobbleRng = this.seed.child('voicing-wobble').rng();
+    this.lastSyncBar = -SYNC_REFRACTORY_BARS - 1;
+    this.hitRng = this.seed.rng();
+    this.slotLengthRng = this.seed.child('chord-slot-length').rng();
+    this.pickupRng = this.seed.child('chord-pickup').rng();
+    this.syncRng = this.seed.child('chord-sync').rng();
+    this.velocityRng = this.seed.child('chord-velocity').rng();
     this.walk = new MarkovChordWalk(this.perturbed, this.seed.child('markov-walk').rng(), 'Am7');
     this.state.currentChord = CHORDS[this.walk.peek()];
   }
@@ -108,110 +232,204 @@ export class ChordScheduler implements SubScheduler {
     // in EmberEngine.scheduleUntil; downstream schedulers (BassScheduler)
     // read state.chordSchedule to know which chord is active when.
     this.state.chordSchedule = [];
-    while (this.nextChordIdx * this.secondsPerChord < to) {
-      const time = this.nextChordIdx * this.secondsPerChord;
 
-      // First chord uses the walk's current state (set in reset()); after
-      // that, step the walk before voicing the new chord. Stage 7c.2:
-      // mode weights at the current position.x bias the Markov pick
-      // toward chords native to the currently-active mode (Aeolian at
-      // the engine's home; brighter modes during negative-x excursions;
-      // Phrygian during positive-x). The first chord (start state =
-      // Am7) is not mode-weighted — keeps the engine anchored at the
-      // lofi home; subsequent chords drift toward the active mode.
-      const positionX = this.state.position.evaluate(time).x;
-      const modeWeights = blendChordWeights(modesAtPosition(positionX));
-      let chordName: ChordName;
-      if (this.nextChordIdx === 0) {
-        chordName = this.walk.peek();
+    while (this.nextBarIdx * this.secondsPerBar < to) {
+      const barTime = this.nextBarIdx * this.secondsPerBar;
+      const barInSlot = this.nextBarIdx - this.currentSlotStartBar;
+
+      // Slot boundary: rotate next → current, voice a new "next" chord,
+      // roll the new slot length, emit pad and chord-schedule entry.
+      if (this.currentChord === null || barInSlot >= this.currentSlotBars) {
+        this.advanceSlot(barTime, events);
+        // Update bar-in-slot now that the slot has rotated.
+      }
+      const currentBarInSlot = this.nextBarIdx - this.currentSlotStartBar;
+      const isLastBarOfSlot = currentBarInSlot === this.currentSlotBars - 1;
+      const isFirstBarOfSlot = currentBarInSlot === 0;
+      const chord = this.currentChord;
+      const voicing = this.currentVoicing;
+      if (chord === null || voicing === null) {
+        this.nextBarIdx++;
+        continue;
+      }
+
+      const density = this.densityStream.evaluate(barTime);
+
+      // Off-beat syncopation: rolled per bar (always consume the RNG so
+      // refractory-vs-no doesn't shift downstream RNG state). Substitutes
+      // for beat-1 of the bar.
+      const syncRoll = this.syncRng.nextFloat();
+      const syncRefractoryOK = this.nextBarIdx - this.lastSyncBar >= SYNC_REFRACTORY_BARS;
+      const syncFires = syncRoll < this.syncRate && syncRefractoryOK;
+      // Beat-1 roll (only matters when not anchored and not displaced by sync).
+      const beat1Roll = this.hitRng.nextFloat();
+      const beat3Roll = this.hitRng.nextFloat();
+
+      if (syncFires) {
+        const time = barTime + 2.5 * this.secondsPerBeat;
+        emitVoicing(events, voicing, time, this.velocity(), SYNC_DURATION_BEATS * this.secondsPerBeat);
+        this.lastSyncBar = this.nextBarIdx;
       } else {
-        chordName = this.walk.next(modeWeights);
-      }
-      const chord = CHORDS[chordName];
-      // Position-driven register drift: sampled at the chord-change
-      // boundary (not mid-chord — re-voicing held notes mid-cycle
-      // would be a salient event). position.y is roughly in [-1, 1];
-      // scaled by ±6 semitones around the seed's home center.
-      const center =
-        this.homeCenter + this.state.position.evaluate(time).y * REGISTER_DRIFT_AMPLITUDE;
-      const register = {
-        low: Math.floor(center - REGISTER_WIDTH / 2),
-        high: Math.ceil(center + REGISTER_WIDTH / 2),
-      };
-      const voicing = voiceChord(this.prevVoicing, chord, { register });
-      this.prevVoicing = voicing;
-      this.state.currentChord = chord;
-      this.state.chordSchedule.push({ time, chord });
-
-      const chordDurationMs = (this.secondsPerChord - 0.25) * 1000;
-      const chordVelocity = 0.5 + this.rng.nextFloat() * 0.12;
-      for (const pitch of voicing) {
-        events.push({
-          kind: 'note',
-          channel: Channels.RHODES,
-          pitch,
-          velocity: chordVelocity,
-          durationMs: chordDurationMs,
-          time,
-        });
+        // Beat 1 of every bar always fires. `beat1Roll` is consumed (for
+        // determinism stability with prior tuning) but no longer gates
+        // the hit — earlier rule of "rolled on subsequent bars" produced
+        // up to ~13 s of chord silence in low-density patches on 4-bar
+        // slots, which read as "the music stopped." Density still
+        // controls busy-ness via beat 3, pickup, and sync. The "space"
+        // remains in the silence between beat 1 and beat 3 and the
+        // absence-of-beat-3 cases.
+        void beat1Roll;
+        void isFirstBarOfSlot;
+        const time = barTime;
+        emitVoicing(events, voicing, time, this.velocity(), BEAT_1_DURATION_BEATS * this.secondsPerBeat);
       }
 
-      // Pad: root + fifth, sustaining 4 bars (two chord cycles). Pick the
-      // octave of the new chord's root nearest the previous pad root so
-      // the bass doesn't leap up to a 7th between chords. First chord
-      // anchors at the lower end of the register.
-      const padRoot = nearestRoot(chord.rootPc, this.prevPadRoot);
-      this.prevPadRoot = padRoot;
-      const padDurationMs = this.secondsPerChord * 2 * 1000;
-      events.push({
-        kind: 'note',
-        channel: Channels.PAD,
-        pitch: padRoot,
-        velocity: 0.4,
-        durationMs: padDurationMs,
-        time,
-      });
-      events.push({
-        kind: 'note',
-        channel: Channels.PAD,
-        pitch: padRoot + 7,
-        velocity: 0.4,
-        durationMs: padDurationMs,
-        time,
-      });
-
-      // Voicing wobble (§11 voicing rotation): at bar 1 of the chord
-      // cycle, with low probability, re-articulate one inner voice an
-      // octave up. The original voicing keeps sustaining underneath so
-      // this is additive — a brief shimmer rather than a re-voicing.
-      // Only triggers on chords with ≥ 3 voices (need an inner voice to
-      // pick). Always rolls the RNG so chord-skip determinism is stable.
-      const wobbleFires = this.wobbleRng.bernoulli(WOBBLE_PROBABILITY);
-      const innerIdxRoll = this.wobbleRng.nextFloat();
-      if (wobbleFires && voicing.length >= 3) {
-        const innerIdx = 1 + Math.floor(innerIdxRoll * (voicing.length - 2));
-        const wobblePitch = (voicing[innerIdx] as number) + 12;
-        const wobbleTime = time + this.secondsPerChord / 2;
-        const wobbleDurationMs = (this.secondsPerChord / 2 - 0.1) * 1000;
-        events.push({
-          kind: 'note',
-          channel: Channels.RHODES,
-          pitch: wobblePitch,
-          velocity: chordVelocity * 0.65,
-          durationMs: wobbleDurationMs,
-          time: wobbleTime,
-        });
+      const beat3Fires = beat3Roll < density;
+      if (beat3Fires) {
+        const time = barTime + 2 * this.secondsPerBeat;
+        emitVoicing(events, voicing, time, this.velocity(), BEAT_3_DURATION_BEATS * this.secondsPerBeat);
       }
 
-      this.nextChordIdx++;
+      // Pickup: only on last bar of slot, only if we have a next-chord
+      // voicing to anticipate. Always roll for determinism.
+      const pickupRoll = this.pickupRng.nextFloat();
+      if (isLastBarOfSlot && this.nextVoicing !== null) {
+        const pickupFires = pickupRoll < PICKUP_PROB;
+        if (pickupFires) {
+          const time = barTime + 3.5 * this.secondsPerBeat;
+          emitVoicing(
+            events,
+            this.nextVoicing,
+            time,
+            this.velocity() * PICKUP_VEL_MULTIPLIER,
+            PICKUP_DURATION_BEATS * this.secondsPerBeat,
+          );
+        }
+      }
+
+      this.nextBarIdx++;
     }
     return events;
   }
+
+  /** Rotate to the next chord slot: pre-stepped next-chord becomes
+   * current, walk advances to pre-step a new next, emit pad + chord-
+   * schedule entry, roll new slot length. */
+  private advanceSlot(barTime: number, events: EngineEvent[]): void {
+    const isFirstSlot = this.currentChord === null;
+    if (isFirstSlot) {
+      // Walk starts at Am7 (peek). First-chord voicing uses no prev.
+      const firstName: ChordName = this.walk.peek();
+      const firstChord = CHORDS[firstName];
+      this.currentChord = firstChord;
+      this.currentVoicing = this.voiceFor(firstChord, null, barTime);
+      // Pre-step the walk so we know the next chord for pickups.
+      this.preStepNext(barTime);
+    } else {
+      // Rotate pre-stepped next → current.
+      this.currentChord = this.nextChord;
+      this.currentVoicing = this.nextVoicing;
+      this.currentSlotStartBar = this.nextBarIdx;
+      // Now compute the *new* next chord for the upcoming pickup window.
+      this.preStepNext(barTime);
+    }
+    // Roll the new slot length using current slot-bias.
+    const bias = this.slotBiasStream.evaluate(barTime);
+    this.currentSlotBars = this.slotLengthRng.nextFloat() < bias ? LONG_SLOT_BARS : SHORT_SLOT_BARS;
+
+    const chord = this.currentChord;
+    if (chord === null) return;
+    this.state.currentChord = chord;
+    this.state.chordSchedule.push({ time: barTime, chord });
+
+    // Pad: root + fifth, sustaining the slot length.
+    const padRoot = nearestRoot(chord.rootPc, this.prevPadRoot);
+    this.prevPadRoot = padRoot;
+    const padDurationMs = this.currentSlotBars * this.secondsPerBar * 1000;
+    events.push(
+      {
+        kind: 'note',
+        channel: Channels.PAD,
+        pitch: padRoot,
+        velocity: PAD_VELOCITY,
+        durationMs: padDurationMs,
+        time: barTime,
+      },
+      {
+        kind: 'note',
+        channel: Channels.PAD,
+        pitch: padRoot + 7,
+        velocity: PAD_VELOCITY,
+        durationMs: padDurationMs,
+        time: barTime,
+      },
+    );
+  }
+
+  /** Pre-step the Markov walk to compute the chord that will start
+   * at the *next* slot, voice it using the current voicing as prev,
+   * and store it. Used so the pickup can anticipate harmony. */
+  private preStepNext(atTime: number): void {
+    const positionX = this.state.position.evaluate(atTime).x;
+    const modeWeights = blendChordWeights(modesAtPosition(positionX));
+    const nextName = this.walk.next(modeWeights);
+    const nextChord = CHORDS[nextName];
+    this.nextChord = nextChord;
+    this.nextVoicing = this.voiceFor(nextChord, this.currentVoicing, atTime);
+  }
+
+  /** Voice a chord with position-driven register and voice-leading
+   * smoothing from prev. */
+  private voiceFor(chord: ChordSymbol, prev: number[] | null, time: number): number[] {
+    const center =
+      this.homeCenter + this.state.position.evaluate(time).y * REGISTER_DRIFT_AMPLITUDE;
+    const register = {
+      low: Math.floor(center - REGISTER_WIDTH / 2),
+      high: Math.ceil(center + REGISTER_WIDTH / 2),
+    };
+    return voiceChord(prev, chord, { register });
+  }
+
+  private velocity(): number {
+    return VEL_BASE + this.velocityRng.nextFloat() * VEL_JITTER;
+  }
+
 }
 
-/** Pick the MIDI pitch in BASS_LOW..BASS_HIGH with pitch class `pc` that's
- * closest to `target`. If `target` is null (first chord), anchor at the
- * lower end of the register — keeps the opening grounded. */
+function emitVoicing(
+  events: EngineEvent[],
+  voicing: number[],
+  time: number,
+  velocity: number,
+  durationSec: number,
+): void {
+  const durationMs = durationSec * 1000;
+  const clamped = clamp01(velocity);
+  for (const pitch of voicing) {
+    events.push({
+      kind: 'note',
+      channel: Channels.RHODES,
+      pitch,
+      velocity: clamped,
+      durationMs,
+      time,
+    });
+  }
+}
+
+/** Sample from Beta(α, β) using the Gamma-ratio identity for
+ * positive integer shape parameters. X ~ Gamma(k, 1) is the sum of
+ * k iid Exponential(1) variates, and Exponential(1) = -log(U). */
+function sampleBeta(rng: Rng, alpha: number, beta: number): number {
+  let x = 0;
+  for (let i = 0; i < alpha; i++) x -= Math.log(1 - rng.nextFloat());
+  let y = 0;
+  for (let i = 0; i < beta; i++) y -= Math.log(1 - rng.nextFloat());
+  return x / (x + y);
+}
+
+/** Pick the MIDI pitch in BASS_LOW..BASS_HIGH with pitch class `pc`
+ * closest to `target`. Null target anchors at the lower end. */
 function nearestRoot(pc: number, target: number | null): number {
   if (target === null) {
     let p = pc;
@@ -230,4 +448,10 @@ function nearestRoot(pc: number, target: number | null): number {
     }
   }
   return best;
+}
+
+function clamp01(v: number): number {
+  if (v < 0) return 0;
+  if (v > 1) return 1;
+  return v;
 }

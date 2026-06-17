@@ -43,13 +43,19 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
   keysPan.connect(warmth);
   keysPan.connect(keysSend);
   keysSend.connect(reverb);
+  // Release tuned for the chord-comping scheduler. The prototype's
+  // 2.6 s caused successive comping hits to ring on top of each
+  // other (sustained-drone reading); 0.5 s read as "chopped." 0.8 s
+  // is the middle ground — hits decay smoothly without piling up
+  // into the next bar's beat 1 at lofi tempos (74 BPM bar ≈ 3.25 s,
+  // so a 0.8 s release leaves > 2 s of clear space).
   const keys = new Tone.PolySynth(Tone.FMSynth, {
     harmonicity: 3,
     modulationIndex: 7,
     oscillator: { type: 'sine' },
-    envelope: { attack: 0.03, decay: 0.7, sustain: 0.28, release: 2.6 },
+    envelope: { attack: 0.03, decay: 0.7, sustain: 0.28, release: 0.8 },
     modulation: { type: 'triangle' },
-    modulationEnvelope: { attack: 0.02, decay: 0.4, sustain: 0.1, release: 1.2 },
+    modulationEnvelope: { attack: 0.02, decay: 0.4, sustain: 0.1, release: 0.6 },
     volume: -11,
   }).connect(chorus);
 

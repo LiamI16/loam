@@ -189,6 +189,23 @@ changed; etc. Diagnosing regressions is fast. Every layer-locked test
 is also a v2-seed-format breaker if intentionally changed — they're
 the project's compatibility contract surface.
 
+**Engine fingerprint resets (history).** The `EmberEngine` whole-
+engine fingerprint in `test/ember-engine.test.ts` is *deliberately*
+reset whenever a sub-scheduler rewrite shifts the RNG sequence. Each
+reset is a v2 break for any saved seed. Recorded:
+
+- 2026-06-XX (drums): per-voice timing + accents + per-bar variation.
+- 2026-06-XX (bass): bass scheduler with stickiness.
+- 2026-06-17 (chord comping): chord-scheduler rewritten as a bar-grid
+  comping scheduler. Adds seed children `chord-slot-bias-fbm/-config`,
+  `chord-slot-length`, `chord-density-fbm/-config`, `chord-pickup`,
+  `chord-sync-config/-` and `chord-velocity`. Removes
+  `voicing-wobble`. New fingerprint locked at count 116 with first 6
+  events pad-before-rhodes at t=0 (pad emission now runs during
+  slot-advance, ahead of per-bar hit rolls). Count includes the
+  same-day "beat 1 anchored every bar" tightening that followed a
+  listen pass — see chord-scheduler.ts for the why.
+
 ### 7.3 Derived methods aren't separately contract-locked
 
 The determinism test pins the `uint32` sequence emitted by `Rng.next()`.

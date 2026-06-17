@@ -20,6 +20,10 @@ plugin, sharing one engine.
   v1 spec, architecture, strategy).
 - **`docs/seed-format.md`** — seed contract + locked-sequence layers
   (the seed-format compatibility surface).
+- **`docs/seed-identity.md`** — load-bearing design principle for
+  per-seed parameter decisions ("Minecraft seed" personality goal,
+  the five-layer hybrid stack). Read before adding any new per-seed
+  knob.
 - **`docs/event-protocol.md`** — typed engine↔adapter event contract.
 - **`docs/gaps.md`** — unresolved questions; check before assuming
   something's decided.
