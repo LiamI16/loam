@@ -169,7 +169,7 @@ $<HTMLInputElement>('speed').addEventListener('input', (e) => {
 $<HTMLButtonElement>('rain').addEventListener('click', (e) => {
   uiState.rain = !uiState.rain;
   (e.target as HTMLButtonElement).classList.toggle('active', uiState.rain);
-  adapter?.setParam('bed.rain.level', uiState.rain ? -28 : -Number.POSITIVE_INFINITY);
+  adapter?.setParam('bed.rain.level', uiState.rain ? -33 : -Number.POSITIVE_INFINITY);
 });
 
 $<HTMLButtonElement>('vinyl').addEventListener('click', (e) => {

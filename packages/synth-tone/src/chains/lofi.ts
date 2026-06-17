@@ -67,18 +67,18 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
     pitchDecay: 0.05,
     octaves: 4,
     envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 1.4 },
-    volume: -7,
+    volume: -9,
   }).connect(drumBus);
   const snare = new Tone.NoiseSynth({
     noise: { type: 'pink' },
     envelope: { attack: 0.001, decay: 0.16, sustain: 0 },
-    volume: -15,
+    volume: -17,
   }).connect(drumBus);
   const hatFx = new Tone.Filter({ type: 'highpass', frequency: 7000 }).connect(drumBus);
   const hat = new Tone.NoiseSynth({
     noise: { type: 'white' },
     envelope: { attack: 0.001, decay: 0.04, sustain: 0 },
-    volume: -26,
+    volume: -28,
   }).connect(hatFx);
 
   // ── texture beds ─────────────────────────────────────────────────
