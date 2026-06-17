@@ -133,7 +133,72 @@ final instrument set.
 
 ## Backlog (ordered by listening impact)
 
-### Melody rewrite — motifs + sustain + pickups
+### Chord comping + voicing variety
+
+**Promoted to next-after-stereo (2026-06-17):** user listening pass
+flagged "background chord rings in your ear" during silences. The
+direct fix is replacing the one-long-sustain chord-cycle model with
+rhythmic comping. Bundles with the previously-planned voicing
+variety since both rewrite the same emission logic in
+`chord-scheduler.ts`.
+
+**Bundle (all touch `chord-scheduler.ts` + `harmony/voicing.ts`):**
+
+1. **Comping rhythm.** Chord hits beat 1 of every bar (always);
+   maybe beat 3 (per-bar roll). Per-cycle variation rolled like the
+   drum bar variations — some bars denser, some sparser. Replaces
+   the one-sustained-voicing-per-cycle model.
+2. **Chord-cut envelope.** Each hit holds ~600–1000 ms (half-beat to
+   one beat), not the current `secondsPerChord − 0.25 s` (~6 s).
+   Each hit is punchy and cuts off; silence between hits is the
+   point — *this* is what fixes the ringing-in-ear problem.
+3. **Voicing micro-variation per hit within a cycle.** When the
+   chord re-articulates at bar 2 beat 1, slight voicing change from
+   bar 1 beat 1 (drop a voice, swap inversion, add or remove the
+   9th). Subtle.
+4. **Voicing archetype variation per chord re-occurrence.** Close /
+   spread / rootless / quartal picked per occurrence when the same
+   chord returns. Weighted to favor close (default) with rarer
+   excursions.
+5. **Deliberate silence between hits.** Shorter envelope (#2) +
+   comping pattern (#1) → natural rests. The space is the feature.
+6. **Altered dominants** (vocabulary expansion). `7♯5`, `7♭5`, `7♭9`
+   added to `harmony/chords.ts`; soft chromatic-friction resolutions
+   per `docs/external-review.md` §A.4.
+7. **Chromatic approach tones.** Occasional chromatic voice motion
+   at chord change — one voice slides chromatically into its new
+   target instead of jumping.
+
+**Arpeggiation explicitly NOT in this stage.** Arpeggiation belongs
+in the Melody rewrite stage as one melodic strategy (chord-tone
+broken sequences). Putting arpeggiation in the chord scheduler
+would collide with the melody scheduler (two simultaneous melodic
+voices = noodling) and would force per-seed chord-mode coupling
+that breaks scheduler independence. Discussed and ruled out
+2026-06-17.
+
+**Files:** `chord-scheduler.ts`, `harmony/voicing.ts`,
+`harmony/chords.ts`, `harmony/markov.ts`, voicing tests, chord tests.
+
+---
+
+### Chord echo / delay send (small post-comping tune-up)
+
+Tiny stage. Adds a feedback-delay node on the rhodes path with a
+quarter-note tap and ~30% feedback. Each chord-comping hit gets a
+gentle rhythmic echo tail — makes one hit feel like several, dub /
+lofi tradition. Complementary to comping: the silence between
+comping hits gets *filled* by the echo of the previous hit.
+
+Expose `fx.chordEcho.feedback` / `fx.chordEcho.wet` as
+`ParamSetter`s so future fBm drift can modulate.
+
+**Files:** `chains/lofi.ts` (one `Tone.FeedbackDelay` node + a
+send on the keys synth + two new `registerParam` calls).
+
+---
+
+### Melody rewrite — motifs + sustain + pickups + arpeggiation
 
 The melody currently has zero memory between notes (each pitch is an
 independent Bernoulli draw from a pentatonic bag). Real melodies
@@ -149,6 +214,13 @@ versus "noodling." User's other big listening complaint.
   current 4n / 8n. Space + holds are half the genre.
 - Pickup notes / anacrusis: phrase beginnings get a soft lead-in
   note instead of starting cold on the downbeat.
+- **Arpeggiation as a melodic strategy.** Sometimes the melody plays
+  a chord-tone arpeggio (broken chord sequence) instead of a scalar
+  phrase or held note. Sits as one strategy among several;
+  arpeggio-leaning seeds get a recognizably "broken chord" feel
+  without the chord scheduler having to know about it. Bundled here
+  per the 2026-06-17 design decision (Path Y: role-separation —
+  chord scheduler always comps, melody scheduler covers arpeggios).
 
 **Why now:** addresses the "melody has no character" complaint.
 Drums + bass need to be in place first so the melody has something
@@ -185,31 +257,6 @@ form (only meaningful if there are multiple elements worth muting).
 
 **Files:** new `arrangement-controller.ts`, `ember.ts` wiring, every
 sub-scheduler reads the mute mask.
-
----
-
-### Chord voicing variety per occurrence
-
-Refinement on the existing chord scheduler. When `Am7` appears at
-bar 5 and again at bar 13, we voice it nearly identically. Real
-pianists alternate voicings within a phrase — different inversions,
-different extensions, occasional chromatic approach tones. Stage 6
-added a single wobble embellishment; this stage extends it into a
-real voicing-variation engine.
-
-**Includes:**
-- Multiple voicing archetypes (close, spread, rootless, quartal)
-  per chord, picked stochastically per occurrence.
-- Chord substitution at voicing time (Am7 occasionally voiced as
-  Cmaj7/A — same pitches reorganized, different feel).
-- Occasional chromatic approach tones in the voice-leading.
-- Altered-dominant vocabulary expansion (`7♯5`, `7♭5`, `7♭9`) per
-  `docs/external-review.md` §A.4 — softer chromatic-friction
-  resolution than plain V7, fits the lofi "never resolve hard"
-  rule. Adds Markov matrix rows for the new chords.
-
-**Files:** `chord-scheduler.ts`, `harmony/voicing.ts`,
-`harmony/chords.ts`, `harmony/markov.ts`, voicing tests.
 
 ---
 
