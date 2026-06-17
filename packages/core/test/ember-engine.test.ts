@@ -83,6 +83,64 @@ describe('EmberEngine', () => {
     expect(low).toBeLessThan(high * 0.3);
   });
 
+  it('speedMultiplier=1.0 is byte-identical to default', () => {
+    const a = new EmberEngine(Seed.from(42n));
+    const b = new EmberEngine(Seed.from(42n), { speedMultiplier: 1.0 });
+    expect(b.scheduleUntil(10)).toEqual(a.scheduleUntil(10));
+  });
+
+  it('speedMultiplier=2.0 halves timestamps and durations, preserves pitches', () => {
+    const slow = new EmberEngine(Seed.from(42n));
+    const fast = new EmberEngine(Seed.from(42n), { speedMultiplier: 2.0 });
+    // Schedule enough wall-clock time on each that they cover the same
+    // amount of musical content: 10 s engine-time = 10 s @1× = 5 s @2×.
+    const slowEvents = slow.scheduleUntil(10);
+    const fastEvents = fast.scheduleUntil(5);
+    expect(fastEvents.length).toBe(slowEvents.length);
+    for (let i = 0; i < slowEvents.length; i++) {
+      const s = slowEvents[i];
+      const f = fastEvents[i];
+      if (!s || !f) throw new Error('length mismatch');
+      expect(f.kind).toBe(s.kind);
+      expect(f.time).toBeCloseTo(s.time / 2, 9);
+      if (s.kind === 'note' && f.kind === 'note') {
+        expect(f.pitch).toBe(s.pitch);
+        expect(f.channel).toBe(s.channel);
+        expect(f.durationMs).toBeCloseTo(s.durationMs / 2, 6);
+      }
+      if (s.kind === 'param' && f.kind === 'param') {
+        expect(f.target).toBe(s.target);
+        expect(f.value).toBeCloseTo(s.value, 9);
+        if (s.rampMs !== undefined && f.rampMs !== undefined) {
+          expect(f.rampMs).toBeCloseTo(s.rampMs / 2, 6);
+        }
+      }
+    }
+  });
+
+  it('setOption("speedMultiplier") rescales subsequent emissions only', () => {
+    const e = new EmberEngine(Seed.from(42n));
+    const first = e.scheduleUntil(2);
+    // Switch to half speed: the next wall-clock second should produce
+    // half a second of musical content.
+    e.setOption('speedMultiplier', 0.5);
+    const second = e.scheduleUntil(4);
+    // Continuity at the boundary: second's first event time >= 2.
+    expect((second[0] as { time: number }).time).toBeGreaterThanOrEqual(2);
+    // First-batch events stay below 2 (the audio boundary).
+    for (const ev of first) expect(ev.time).toBeLessThan(2);
+    // After the speed change, the engine should still be producing
+    // events out to the new audio cursor.
+    expect(second.length).toBeGreaterThan(0);
+    for (const ev of second) expect(ev.time).toBeLessThan(4);
+  });
+
+  it('speedMultiplier is clamped at the minimum', () => {
+    const e = new EmberEngine(Seed.from(42n), { speedMultiplier: -1 });
+    // Out-of-range collapses to the minimum (0.1) rather than throwing.
+    expect(e.getOptions().speedMultiplier).toBeGreaterThan(0);
+  });
+
   it('determinism contract — fixed seed produces a known fingerprint', () => {
     const e = new EmberEngine(Seed.from(42n));
     const events = e.scheduleUntil(5);

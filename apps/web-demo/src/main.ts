@@ -1,7 +1,10 @@
 import { EmberEngine, Seed } from '@loam/core';
 import { buildLofiChain, ToneAudioAdapter, volToDb } from '@loam/synth-tone';
 
-let currentBpm = 74;
+// Engine's natural tempo. Hidden from the user — the speed slider is
+// the user-facing tempo control. Will become seed-derived in a future
+// stage (each seed picks its own home BPM from a range).
+const ENGINE_BPM = 74;
 
 // ── seed handling ─────────────────────────────────────────────────
 function seedFromUrl(): bigint | null {
@@ -32,7 +35,7 @@ const seedInput = $<HTMLInputElement>('seed');
 function setBeatCss(bpm: number): void {
   stage.style.setProperty('--beat', `${60 / bpm}s`);
 }
-setBeatCss(currentBpm);
+setBeatCss(ENGINE_BPM);
 seedInput.value = currentSeed.toString();
 
 // ── state ─────────────────────────────────────────────────────────
@@ -45,9 +48,10 @@ const uiState = { rain: false, vinyl: true };
 // ── audio init ────────────────────────────────────────────────────
 function buildEngine(seedValue: bigint): EmberEngine {
   return new EmberEngine(Seed.from(seedValue), {
-    bpm: currentBpm,
+    bpm: ENGINE_BPM,
     density: 0.05 + (Number($<HTMLInputElement>('den').value) / 100) * 0.33,
     vinylEnabled: uiState.vinyl,
+    speedMultiplier: Number($<HTMLInputElement>('speed').value) / 100,
   });
 }
 
@@ -155,6 +159,13 @@ $<HTMLInputElement>('den').addEventListener('input', (e) => {
   engine?.setOption('density', density);
 });
 
+$<HTMLInputElement>('speed').addEventListener('input', (e) => {
+  const v = Number((e.target as HTMLInputElement).value);
+  const mult = v / 100;
+  $<HTMLElement>('speedVal').textContent = `${mult.toFixed(2)}×`;
+  engine?.setOption('speedMultiplier', mult);
+});
+
 $<HTMLButtonElement>('rain').addEventListener('click', (e) => {
   uiState.rain = !uiState.rain;
   (e.target as HTMLButtonElement).classList.toggle('active', uiState.rain);
@@ -165,18 +176,6 @@ $<HTMLButtonElement>('vinyl').addEventListener('click', (e) => {
   uiState.vinyl = !uiState.vinyl;
   (e.target as HTMLButtonElement).classList.toggle('active', uiState.vinyl);
   engine?.setOption('vinylEnabled', uiState.vinyl);
-});
-
-// ── bpm slider (engine rebuild) ──────────────────────────────────
-$<HTMLInputElement>('bpm').addEventListener('input', (e) => {
-  const v = Number((e.target as HTMLInputElement).value);
-  $<HTMLElement>('bpmVal').textContent = String(v);
-});
-$<HTMLInputElement>('bpm').addEventListener('change', (e) => {
-  const v = Number((e.target as HTMLInputElement).value);
-  currentBpm = v;
-  setBeatCss(v);
-  void swapEngine(buildEngine(currentSeed));
 });
 
 // ── seed input + roll + copy ─────────────────────────────────────

@@ -22,6 +22,10 @@ export interface EmberOptions {
   density?: number;
   /** Whether to fire vinyl crackle events. Default true. */
   vinylEnabled?: boolean;
+  /** Wall-clock playback speed multiplier. Live-mutable. 1.0 = normal;
+   * 2.0 = twice as fast; 0.5 = half speed. Scales emitted timestamps and
+   * durations only — pitches and sequence are unchanged. Default 1.0. */
+  speedMultiplier?: number;
 }
 
 /**
@@ -31,6 +35,10 @@ export interface EmberOptions {
  *
  * Streams (`densityStream`, `evoCutoffStream`) are time-varying. Static
  * fields (`bpm`, `vinylEnabled`) change only via setOption or rebuild.
+ *
+ * `speedMultiplier` lives on the engine wrapper, not here — sub-schedulers
+ * see only musical (engine) time and don't need to know about playback
+ * scaling.
  */
 export interface EngineState {
   bpm: number;
@@ -54,6 +62,11 @@ export interface SubScheduler {
  * below audio rate and well above visible LFO-step granularity. */
 const PARAM_TICK_SEC = 0.25;
 
+/** Minimum speed multiplier. Below this, scheduling becomes impractical
+ * (one wall-clock second produces fractional engine content) and the
+ * audio essentially halts. */
+const MIN_SPEED = 0.1;
+
 /**
  * Stage 5 engine. Composes four independent sub-schedulers plus an
  * fBm-driven continuous-parameter stream that emits `ParamEvent`s for
@@ -62,9 +75,18 @@ const PARAM_TICK_SEC = 0.25;
  * Per-seed liveliness: each fBm-driven parameter draws its depth and
  * base frequency from a dedicated `seed.child('<param>-fbm-config')`
  * stream at construction. Same seed → same liveliness fingerprint.
+ *
+ * Stage 6.5 adds a wall-clock `speedMultiplier`. The engine tracks two
+ * cursors — `engineCursor` (musical/unscaled time the sub-schedulers
+ * see) and `audioCursor` (wall-clock time the caller sees). When the
+ * multiplier changes mid-stream, already-emitted events keep their old
+ * scaling; subsequent emissions use the new multiplier. Sub-schedulers
+ * are untouched.
  */
 export class EmberEngine implements Engine {
-  private cursor = 0;
+  private engineCursor = 0;
+  private audioCursor = 0;
+  private speedMultiplier: number;
   private readonly state: EngineState;
   private readonly chords: ChordScheduler;
   private readonly drums: DrumScheduler;
@@ -75,6 +97,7 @@ export class EmberEngine implements Engine {
     const bpm = options.bpm ?? 74;
     const densityMean = options.density ?? 0.18;
     const vinylEnabled = options.vinylEnabled ?? true;
+    this.speedMultiplier = clampSpeed(options.speedMultiplier ?? 1.0);
 
     // Per-seed liveliness fingerprint for density: draw depth & base freq
     // from a dedicated child stream so adding a new param later doesn't
@@ -124,22 +147,48 @@ export class EmberEngine implements Engine {
   }
 
   scheduleUntil(until: number): EngineEvent[] {
-    if (until <= this.cursor) return [];
-    const events: EngineEvent[] = [
-      ...this.chords.scheduleUntil(this.cursor, until),
-      ...this.drums.scheduleUntil(this.cursor, until),
-      ...this.melody.scheduleUntil(this.cursor, until),
-      ...this.crackle.scheduleUntil(this.cursor, until),
-      ...this.emitTicks(this.cursor, until),
-      ...this.emitContinuousParams(this.cursor, until),
+    if (until <= this.audioCursor) return [];
+    const mult = this.speedMultiplier;
+    const audioFrom = this.audioCursor;
+    const engineFrom = this.engineCursor;
+    const engineUntil = engineFrom + (until - audioFrom) * mult;
+
+    const raw: EngineEvent[] = [
+      ...this.chords.scheduleUntil(engineFrom, engineUntil),
+      ...this.drums.scheduleUntil(engineFrom, engineUntil),
+      ...this.melody.scheduleUntil(engineFrom, engineUntil),
+      ...this.crackle.scheduleUntil(engineFrom, engineUntil),
+      ...this.emitTicks(engineFrom, engineUntil),
+      ...this.emitContinuousParams(engineFrom, engineUntil),
     ];
-    events.sort((a, b) => a.time - b.time);
-    this.cursor = until;
-    return events;
+
+    // Map engine-time events to audio-time. `time` of an event scales
+    // linearly; `durationMs` and `rampMs` scale the same way (a half-
+    // speed engine produces notes that sustain twice as long in wall
+    // time). At mult=1.0 this is the identity, so locked-sequence tests
+    // remain valid.
+    const scaled: EngineEvent[] = raw.map((ev) => {
+      const audioTime = audioFrom + (ev.time - engineFrom) / mult;
+      if (ev.kind === 'note') {
+        return { ...ev, time: audioTime, durationMs: ev.durationMs / mult };
+      }
+      if (ev.kind === 'param') {
+        const next: ParamEvent = { ...ev, time: audioTime };
+        if (ev.rampMs !== undefined) next.rampMs = ev.rampMs / mult;
+        return next;
+      }
+      return { ...ev, time: audioTime };
+    });
+    scaled.sort((a, b) => a.time - b.time);
+
+    this.engineCursor = engineUntil;
+    this.audioCursor = until;
+    return scaled;
   }
 
   reset(): void {
-    this.cursor = 0;
+    this.engineCursor = 0;
+    this.audioCursor = 0;
     this.chords.reset();
     this.drums.reset();
     this.melody.reset();
@@ -148,9 +197,10 @@ export class EmberEngine implements Engine {
 
   /**
    * Live-mutate an engine option. `density` updates the fBm centerpoint
-   * without disturbing motion. `bpm` is intentionally not live-settable
-   * (sub-schedulers cache step sizes); the demo rebuilds the engine on
-   * BPM change instead.
+   * without disturbing motion. `speedMultiplier` rescales wall-clock
+   * playback going forward; in-flight events keep their old scaling.
+   * `bpm` is intentionally not live-settable (sub-schedulers cache step
+   * sizes); the demo rebuilds the engine on BPM change instead.
    */
   setOption<K extends keyof EmberOptions>(name: K, value: NonNullable<EmberOptions[K]>): void {
     if (name === 'density') {
@@ -162,6 +212,8 @@ export class EmberEngine implements Engine {
       }
     } else if (name === 'vinylEnabled') {
       this.state.vinylEnabled = value as boolean;
+    } else if (name === 'speedMultiplier') {
+      this.speedMultiplier = clampSpeed(value as number);
     }
     // bpm: ignored intentionally
   }
@@ -175,6 +227,7 @@ export class EmberEngine implements Engine {
       bpm: this.state.bpm,
       density: densityMean,
       vinylEnabled: this.state.vinylEnabled,
+      speedMultiplier: this.speedMultiplier,
     };
   }
 
@@ -220,4 +273,9 @@ export class EmberEngine implements Engine {
     }
     return events;
   }
+}
+
+function clampSpeed(v: number): number {
+  if (!Number.isFinite(v) || v < MIN_SPEED) return MIN_SPEED;
+  return v;
 }
