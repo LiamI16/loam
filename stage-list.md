@@ -38,36 +38,30 @@ Compact summary — full implementation notes in the linked docs.
 
 ---
 
-## Next up
+## Done (post-replan)
 
-### 1. Drum rewrite — per-bar variation + swing + accents
+| Stage | What | Notes |
+|---|---|---|
+| Drum rewrite | Per-bar variation + per-voice micro-timing + velocity accents + mild 16th-swing | See below |
 
-Drums are the heartbeat; mechanical drums make everything feel
-mechanical. Current state: kick on grid, snare on grid, hat on every
-8th, velocity has slight jitter, no swing. This is the single biggest
-"feels boring" contributor flagged in the user's listening pass.
-
-**Bundle (all touch `drum-scheduler.ts`):**
-- Per-bar variation: ghost snare hits, occasional open hi-hat, kick
-  syncopation, hat drops every N bars. Bar-to-bar mutation with
-  drummer-style probabilities (not pure CA).
-- Swing per voice: snare drags behind beat (62%+), hat sits ahead,
-  kick on grid. Per-element micro-timing vector, not one bus swing.
-  Targets from `docs/external-review.md` §A.1 / §A.3.
-- Velocity accents within a bar: beat 1 louder, beats 3-4 softer,
-  off-beats softer than down-beats. Real groove dynamics, not the
-  current uniform jitter.
-
-**Why first:** user's biggest listening complaint; everything else
-lands better on top of drums that breathe.
-
-**Files:** `drum-scheduler.ts`, drum tests.
+**Drum rewrite details:** `drum-scheduler.ts` rewritten. Per-voice
+constant micro-timing (snare drag +15 ms, hat slight ahead −3 ms,
+kick on grid). Velocity accent multipliers per step position (beat 1
+strongest 1.0, beat 3 0.92, beats 2 / 4 0.88, "and"s 0.78, off-16ths
+0.65). 16th-swing ratio 0.55 (mild) applied to odd-step hits (ghost
+snares, ghost hats, kick syncopations). Per-bar variation rolls:
+`kickSync` (15%), `hatDrop` (8%), `openHatStep` (25% chance, 6 or
+14), `ghostSnareSteps` (40% chance, 1–2 picks from [3, 7, 11, 15]).
+Velocity jitter ±5%. Tests rewritten for statistical-property
+assertions (drum-scheduler tests now seed-robust). Engine fingerprint
+deliberately reset — count 103 → 105 and first event is now the
+hat-with-offset at t=−0.003.
 
 ---
 
-## Backlog (ordered by listening impact)
+## Next up
 
-### 2. Bass scheduler
+### Bass scheduler
 
 A missing instrument. Currently the pad does double-duty as bass
 (root + fifth, holds 4 bars). Real lofi almost always has a separate
@@ -86,7 +80,9 @@ AM or sine bass with short envelope (separate from pad's AM blanket).
 
 ---
 
-### 3. Stereo + per-instrument reverb (audio chain mixing)
+## Backlog (ordered by listening impact)
+
+### Stereo + per-instrument reverb (audio chain mixing)
 
 Cheap, transformative. Current chain is mono and routes everything
 through one global reverb — flat. Real lofi takes advantage of stereo
