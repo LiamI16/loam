@@ -39,9 +39,13 @@ Obsidian plugin, sharing one engine.
 
 ## Active build tracking
 
-- **`current-stage-list.md`** (repo root) — the actual development
-  checklist. Always check this first when picking up work. Update boxes as
-  items complete; move stages forward as they finish.
+- **`stage-list.md`** (repo root) — the actual development checklist.
+  Flat ordered list of remaining features, ranked by listening impact.
+  Always check this first when picking up work. Promote stages from
+  "Backlog" to "Next up" as the current one finishes; move completed
+  stages into the "Done" summary table.
+- **`phase1-stage-list.md`** (repo root) — historical record of the
+  Phase 1 prototype port (Stages 1–4). Reference only; don't edit.
 
 ## Working notes for Claude
 
