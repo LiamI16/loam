@@ -97,6 +97,12 @@ export class EmberEngine implements Engine {
   private readonly drums: DrumScheduler;
   private readonly melody: MelodyScheduler;
   private readonly crackle: CrackleScheduler;
+  /** Stage 7b listen-distance streams. Emit-only — sub-schedulers don't
+   * read these, so they live on the engine rather than in `EngineState`.
+   * (Reverb wet was originally a third stream here but dropped post-
+   * implementation on lofi-alignment grounds — see `chains/lofi.ts`.) */
+  private readonly chorusDepthStream: FbmParam;
+  private readonly drumBusCutoffStream: FbmParam;
 
   constructor(seed: Seed, options: EmberOptions = {}) {
     const bpm = options.bpm ?? 74;
@@ -161,6 +167,31 @@ export class EmberEngine implements Engine {
     this.drums = new DrumScheduler(seed.child('drums'), this.state);
     this.melody = new MelodyScheduler(seed.child('melody'), this.state);
     this.crackle = new CrackleScheduler(seed.child('crackle'), this.state);
+
+    // Stage 7b: listen-distance fBm streams. Each gets its own seed
+    // child for both noise signal and per-seed liveliness config, so
+    // adding a future stream later doesn't shift existing seeds'
+    // perceptual fingerprints. Slow timescales (~2–3 min slowest
+    // octave) — these are perceptual framing, not musical motion.
+    // Clamps keep extremes musical. Chorus depth uses a deliberately
+    // narrow range — modulating chorus isn't a lofi convention, so
+    // motion stays sub-perceptual rather than foreground.
+    const chorusCfgRng = seed.child('chorus-depth-fbm-config').rng();
+    const drumBusCfgRng = seed.child('drumbus-cutoff-fbm-config').rng();
+    this.chorusDepthStream = new FbmParam(new Fbm1D(seed.child('chorus-depth-fbm')), {
+      mean: 0.3,
+      depth: chorusCfgRng.nextRange(0.06, 0.1),
+      baseFreq: chorusCfgRng.nextRange(0.005, 0.012),
+      minValue: 0.15,
+      maxValue: 0.45,
+    });
+    this.drumBusCutoffStream = new FbmParam(new Fbm1D(seed.child('drumbus-cutoff-fbm')), {
+      mean: 4200,
+      depth: drumBusCfgRng.nextRange(600, 1100),
+      baseFreq: drumBusCfgRng.nextRange(0.005, 0.012),
+      minValue: 2800,
+      maxValue: 5400,
+    });
   }
 
   scheduleUntil(until: number): EngineEvent[] {
@@ -278,13 +309,29 @@ export class EmberEngine implements Engine {
     let tickTime = tickIdx * PARAM_TICK_SEC;
     const rampMs = PARAM_TICK_SEC * 1000;
     while (tickTime < to) {
-      events.push({
-        kind: 'param',
-        target: 'fx.evoFilter.cutoff',
-        value: this.state.evoCutoffStream.evaluate(tickTime),
-        rampMs,
-        time: tickTime,
-      });
+      events.push(
+        {
+          kind: 'param',
+          target: 'fx.evoFilter.cutoff',
+          value: this.state.evoCutoffStream.evaluate(tickTime),
+          rampMs,
+          time: tickTime,
+        },
+        {
+          kind: 'param',
+          target: 'fx.chorus.depth',
+          value: this.chorusDepthStream.evaluate(tickTime),
+          rampMs,
+          time: tickTime,
+        },
+        {
+          kind: 'param',
+          target: 'fx.drumBus.cutoff',
+          value: this.drumBusCutoffStream.evaluate(tickTime),
+          rampMs,
+          time: tickTime,
+        },
+      );
       tickIdx++;
       tickTime = tickIdx * PARAM_TICK_SEC;
     }

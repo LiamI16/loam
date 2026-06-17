@@ -262,13 +262,62 @@ transitions).
 still has a recognizable home register ✓; locked sequences pinned for
 the new layer ✓; all green ✓.
 
-### Stage 7b (sketch) — Listen-distance fBm extension
+### Stage 7b — Listen-distance fBm extension ✅
 
-Extend Stage 5's `ParamEvent` pattern to more effect / mix channels
-on top of the 7a substrate. Candidates: reverb wet, stereo width,
-instrument balance (Rhodes vs pad). Cheap perceptual variation —
-"how you hear it" evolves alongside "what's being played." Each
-extra channel = one more `FbmParam` + one more adapter `ParamSetter`.
+Extend Stage 5's `ParamEvent` pattern to three perceptually-distinct
+effect channels, each driven by its own slow fBm stream. Independent
+of `PositionStream` — listen-distance is the perceptual framing layer
+("how you hear it"); position-space is the structural musical layer
+("what's being played"). Different concerns, different mechanisms.
+
+**Adapter (`packages/synth-tone/src/chains/lofi.ts`)**
+- [x] `fx.chorus.depth` exposed (plain-number, no Tone.Param ramp API —
+      stepping at the 250 ms cadence is sub-zipper at slow fBm rates).
+- [x] `fx.drumBus.cutoff` exposed.
+- [x] **`fx.reverb.wet` was implemented then dropped** on lofi-alignment
+      review: drifting reverb wetness is an *ambient* convention (Eno
+      / Stars of the Lid lineage) — lofi sits at a fixed, intimate,
+      dry-leaning perceptual distance, and wandering wetness reads as
+      a salient "different room now" transition. When authentic lofi
+      texture nodes land (wow/flutter, tape hiss, bitcrush — none
+      currently in the chain), those become the right drift targets.
+
+**Engine wiring (`packages/core/src/engines/ember/ember.ts`)**
+- [x] Two new private `FbmParam` fields on `EmberEngine` (not on
+      `EngineState` — these are emit-only; no sub-scheduler reads them).
+- [x] Each stream gets its own seed children: `chorus-depth-fbm` /
+      `chorus-depth-fbm-config` and `drumbus-cutoff-fbm` /
+      `drumbus-cutoff-fbm-config`. Adding a future stream doesn't
+      shift existing seeds' perceptual fingerprints.
+- [x] `emitContinuousParams` emits all three (evo + 2 new) at the same
+      250 ms cadence with matching `rampMs`.
+
+**Tuning ranges (means / depth-ranges / clamps):**
+- Chorus depth: mean 0.30, depth 0.06–0.10, clamped [0.15, 0.45].
+  Deliberately narrow — modulating chorus isn't a lofi convention, so
+  the motion stays sub-perceptual.
+- Drum-bus cutoff: mean 4200 Hz, depth 600–1100, clamped [2800, 5400].
+  Aligned with lofi convention (wow/flutter / tape wear simulating
+  drum-brightness drift).
+- baseFreq range 0.005–0.012 Hz for both — slowest octave period
+  ~80–200 s. Slow enough that the effect drifts feel like tape /
+  texture evolution rather than musical motion; per-seed liveliness
+  picks the exact value from that range.
+
+**Tests:** 68 (unchanged total — engine fingerprint count adjusted
+from 63 → 103 to reflect the 2 extra `ParamEvent`s per 250 ms tick;
+first 6 note events unchanged).
+
+**Future authentic-lofi texture work** (separate stage, not Phase 2):
+add wow/flutter, tape hiss, bitcrush, and saturation as Tone nodes in
+the chain, then drift them via the same listen-distance pattern. These
+are the canonical lofi texture knobs (per `docs/lofi-study.md` §9)
+that the current chain lacks. Once they exist, the perceptual-framing
+layer gets meaningfully stronger.
+
+**Done when:** room "distance" audibly evolves over minutes ✓; drum
+brightness drifts independently of music brightness ✓; chorus
+texture wanders ✓; same seed reproducible ✓; all green ✓.
 
 ### Stage 7c (sketch) — Mode drift
 

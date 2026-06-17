@@ -155,7 +155,7 @@ describe('EmberEngine', () => {
     // pad routing, drum grid). If it changes, every saved seed shifts —
     // treat as a deliberate compat break and bump the seed format version.
     expect({ count: events.length, fingerprint }).toEqual({
-      count: 63,
+      count: 103,
       fingerprint: [
         'n:rhodes:60:0.0000',
         'n:rhodes:64:0.0000',

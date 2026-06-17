@@ -202,6 +202,39 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
       evoFilter.frequency.rampTo(v, t);
     },
   });
+
+  // Stage 7b: listen-distance fBm — "how you hear it" evolves alongside
+  // "what's being played." Two perceptually-distinct axes, each driven
+  // by its own slow fBm stream in the engine (independent of the
+  // structural position-space substrate).
+  //
+  // Reverb wet was originally a third channel here but was dropped
+  // after a lofi-alignment review: reverb-wet drift is an *ambient*
+  // music convention (Eno, Stars of the Lid) — lofi sits at a fixed,
+  // intimate, dry-leaning perceptual distance. A drifting wetness
+  // would read as "wait, am I in a different room now?" which is the
+  // salient transition we don't want. When authentic lofi texture
+  // nodes land (wow/flutter, tape hiss, bitcrush — none currently in
+  // the chain), those become the right drift targets.
+  adapter.registerParam('fx.chorus.depth', {
+    set: (v) => {
+      chorus.depth = v;
+    },
+    ramp: (v, _t) => {
+      // Chorus.depth is a plain number, not a Tone.Param — no ramp API.
+      // The engine's 250 ms emission cadence is slow enough that stepping
+      // doesn't audibly zipper at the slow fBm rates Stage 7b uses.
+      chorus.depth = v;
+    },
+  });
+  adapter.registerParam('fx.drumBus.cutoff', {
+    set: (v) => {
+      drumBus.frequency.value = v;
+    },
+    ramp: (v, t) => {
+      drumBus.frequency.rampTo(v, t);
+    },
+  });
 }
 
 /** Map a 0..1 warmth slider to a low-pass cutoff in Hz. */
