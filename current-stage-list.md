@@ -372,15 +372,56 @@ mapping edges).
 **Engine fingerprint unchanged** — 7c.1 ships data only; the Markov
 walk still operates as if Aeolian were the only mode.
 
-#### Stage 7c.2 (sketch) — Wire mode blending
+#### Stage 7c.2 — Wire mode blending ✅
 
-- Update `MarkovChordWalk.next()` to accept a `modeWeights` map and
-  multiply transition weights at sample time.
-- `ChordScheduler` reads `position.x` per chord change, computes
-  `modesAtPosition` + `blendChordWeights`, passes to walk.
-- `MelodyScheduler` reads `dominantModeAtPosition(position.x)` per
-  emission, picks pitches from that mode's `scalePcs`.
-- Smooth crossfade is automatic from the two-mode blend.
+Position-driven mode drift is now live in the chord + melody paths.
+Smooth two-mode crossfade emerges from `modesAtPosition` + the
+blended weighted-sum of chord pools.
+
+**Harmony (`packages/core/src/engines/ember/harmony/`)**
+- [x] `MarkovChordWalk.next(modeWeights?)` — optional mode-weight
+      map multiplies transition weights at sample time. Missing
+      entries → 0 (chord excluded). All-zero fallback picks uniformly
+      from mode-allowed chords (or full vocab if none). Calling
+      `next()` without arguments preserves Stage 6 behavior exactly.
+- [x] `modeMidiBag(mode, low?, high?)` materializes a mode's
+      hexatonic scale over a MIDI range (defaults A4–C6 to match
+      Stage 6's `PENT_MIDI`).
+
+**ChordScheduler**
+- [x] Reads `position.x` per chord-change boundary, computes
+      `blendChordWeights(modesAtPosition(x))`, passes to
+      `walk.next()`.
+- [x] First chord remains the walk's start state (Am7), unweighted —
+      keeps the engine anchored at the lofi home; subsequent chords
+      drift toward the active mode.
+
+**MelodyScheduler**
+- [x] Reads `dominantModeAtPosition(position.x)` per emission, picks
+      pitches from `modeMidiBag(dominantMode)`.
+- [x] Stage 6 chord-tone semitone filter still applies on top —
+      blacklist semitones from chord tones (but always allow chord
+      tones themselves).
+- [x] No more `PENT_MIDI` dependency in the melody path; old
+      `progressions.ts` constant kept as the Aeolian-equivalent
+      reference but the scheduler doesn't import it.
+
+**Tests:** 81 → 85.
+- 2 new `MarkovChordWalk` tests: mode-weighted picks land in pool;
+  all-zero fallback degrades gracefully.
+- 2 new `modeMidiBag` tests: Aeolian default range A4–C6 (8 pitches);
+  custom range respected.
+- Existing locked-sequence test (`walk.next()` no args) unchanged —
+  confirms the mode-weighted path is opt-in.
+
+**Engine fingerprint unchanged** — start chord (Am7) isn't mode-
+weighted, so first 6 events at t=0 stay identical. The Markov walk's
+*later* picks now differ from Stage 7c.1 behavior, but those aren't
+in the first 6 events.
+
+**Done when:** chord progressions audibly shift toward mode-
+characteristic chord pools over a session ✓; melody scale tracks the
+dominant mode ✓; same seed reproducible ✓; all green ✓.
 
 **Deferred to Stage 7.5:** key drift with pivot-chord modulation
 (requires real music-theory work to keep transitions smooth).

@@ -37,6 +37,29 @@ describe('MarkovChordWalk', () => {
     }
   });
 
+  it('next(modeWeights) biases the walk toward the mode chord pool', () => {
+    // Pure Lydian mode weights (Fmaj9 tonic, F-pool chords). The walk
+    // started at Am7 should pick a chord that's *in* the Lydian pool
+    // (Am7's neighbors in HAND_MATRIX intersected with Lydian's pool).
+    // Lydian excludes Am11 and the borrowed Bbmaj7; from Am7's row
+    // those are filtered out, leaving Dm7/Fmaj7/Cmaj7/Em7/Am9/G7.
+    const w = new MarkovChordWalk(HAND_MATRIX, Seed.from(99n).child('harmony/markov').rng(), 'Am7');
+    const lydianWeights = { Fmaj7: 0.9, Fmaj9: 1.0, Cmaj7: 0.7, Cmaj7s11: 0.95, Dm7: 0.55 };
+    for (let i = 0; i < 20; i++) {
+      const next = w.next(lydianWeights);
+      expect(lydianWeights[next] ?? 0).toBeGreaterThan(0);
+    }
+  });
+
+  it('next(modeWeights) with all-zero weights falls back gracefully', () => {
+    // Mode that excludes every reachable chord from Am7's row.
+    const w = new MarkovChordWalk(HAND_MATRIX, Seed.from(7n).child('harmony/markov').rng(), 'Am7');
+    const onlyBbmaj7 = { Bbmaj7: 1.0 }; // Am7's row has Bbmaj7 with weight 0.02
+    const next = w.next(onlyBbmaj7);
+    // Should land on Bbmaj7 (only reachable + only mode-allowed).
+    expect(next).toBe('Bbmaj7');
+  });
+
   it('determinism contract — locked 16-chord walk from Am7 with Seed.from(42n)', () => {
     // Locks: HAND_MATRIX edge weights + walk's CDF-roll formula + the
     // PRNG/Seed.child contract. If any link in this chain changes, every

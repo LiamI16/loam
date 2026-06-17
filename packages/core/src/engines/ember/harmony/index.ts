@@ -21,6 +21,7 @@ export {
   MODES_ORDER,
   type ModePool,
   type ModeWeight,
+  modeMidiBag,
   modesAtPosition,
 } from './modes.js';
 export { DEFAULT_REGISTER, type Register, type VoiceOptions, voiceChord } from './voicing.js';

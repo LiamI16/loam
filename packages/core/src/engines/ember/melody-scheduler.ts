@@ -3,8 +3,12 @@ import type { EngineEvent } from '../../events.js';
 import type { Rng } from '../../rng/rng.js';
 import type { Seed } from '../../rng/seed.js';
 import type { EngineState, SubScheduler } from './ember.js';
-import { type ChordSymbol, chordPitchClasses } from './harmony/index.js';
-import { PENT_MIDI } from './progressions.js';
+import {
+  type ChordSymbol,
+  chordPitchClasses,
+  dominantModeAtPosition,
+  modeMidiBag,
+} from './harmony/index.js';
 
 /**
  * Sparse incidental melody on A-minor pentatonic. Each quarter-note,
@@ -48,7 +52,13 @@ export class MelodyScheduler implements SubScheduler {
       const time = this.nextQuarter * this.secondsPerQuarter;
       const density = this.state.densityStream.evaluate(time);
       if (this.rng.bernoulli(density)) {
-        const pitch = this.pickPitch(this.state.currentChord);
+        // Stage 7c.2: mode-aware pitch bag. The dominant mode at the
+        // current position.x defines the scale; the melody picks from
+        // the corresponding hexatonic MIDI set (A4–C6). Chord-tone
+        // semitone filter still applies on top.
+        const dominantMode = dominantModeAtPosition(this.state.position.evaluate(time).x);
+        const bag = modeMidiBag(dominantMode);
+        const pitch = this.pickPitch(this.state.currentChord, bag);
         const isQuarter = this.rng.bernoulli(0.5);
         const durationMs = (isQuarter ? this.secondsPerQuarter : this.secondsPerQuarter / 2) * 1000;
         const velocity = 0.22 + this.rng.nextFloat() * 0.12;
@@ -66,27 +76,27 @@ export class MelodyScheduler implements SubScheduler {
     return events;
   }
 
-  private pickPitch(chord: ChordSymbol | null): number {
-    if (!chord) return this.rng.pick(PENT_MIDI);
+  private pickPitch(chord: ChordSymbol | null, bag: readonly number[]): number {
+    if (!chord) return this.rng.pick(bag);
     const chordPcs = chordPitchClasses(chord);
     const chordPcSet = new Set(chordPcs);
     // Chord tones are always allowed. A semitone-clash only matters for
     // *non-chord-tones* (e.g., melody E over Fm6 is a real clash; melody
     // C over Cmaj7 is the root and must not be filtered out because B is
     // also in the chord).
-    const allowed = PENT_MIDI.filter(
+    const allowed = bag.filter(
       (p) => chordPcSet.has(p % 12) || !semitoneClash(p % 12, chordPcs),
     );
     if (allowed.length > 0) return this.rng.pick(allowed);
-    // Pentatonic fully clashes — fall back to a chord tone projected into
-    // the pentatonic's register (≈A4–C6, MIDI 69–84).
+    // Scale fully clashes — fall back to a chord tone projected into
+    // the melody register (≈A4–C6, MIDI 69–84).
     const fallback: number[] = [];
     for (const pc of chordPcs) {
       let p = pc;
       while (p < 69) p += 12;
       if (p <= 84) fallback.push(p);
     }
-    return fallback.length > 0 ? this.rng.pick(fallback) : this.rng.pick(PENT_MIDI);
+    return fallback.length > 0 ? this.rng.pick(fallback) : this.rng.pick(bag);
   }
 }
 

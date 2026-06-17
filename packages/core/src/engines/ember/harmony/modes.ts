@@ -302,3 +302,19 @@ export function dominantModeAtPosition(x: number): Mode {
   }
   return best.mode;
 }
+
+/**
+ * Materialize a mode's `scalePcs` as MIDI pitches over `[low, high]`,
+ * ascending. The melody scheduler picks from this bag instead of the
+ * fixed A-minor pentatonic. Range matches Stage 6's `PENT_MIDI`
+ * (A4–C6) so the melody sits in the same register regardless of mode.
+ */
+export function modeMidiBag(mode: Mode, low = 69, high = 84): number[] {
+  const pcs = MODE_POOLS[mode].scalePcs;
+  const out: number[] = [];
+  for (let p = low; p <= high; p++) {
+    const pc = ((p % 12) + 12) % 12;
+    if (pcs.includes(pc)) out.push(p);
+  }
+  return out;
+}

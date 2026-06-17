@@ -4,10 +4,12 @@ import type { Rng } from '../../rng/rng.js';
 import type { Seed } from '../../rng/seed.js';
 import type { EngineState, SubScheduler } from './ember.js';
 import {
+  blendChordWeights,
   CHORDS,
   type ChordName,
   HAND_MATRIX,
   MarkovChordWalk,
+  modesAtPosition,
   perturbMatrix,
   type TransitionMatrix,
   voiceChord,
@@ -106,12 +108,20 @@ export class ChordScheduler implements SubScheduler {
       const time = this.nextChordIdx * this.secondsPerChord;
 
       // First chord uses the walk's current state (set in reset()); after
-      // that, step the walk before voicing the new chord.
+      // that, step the walk before voicing the new chord. Stage 7c.2:
+      // mode weights at the current position.x bias the Markov pick
+      // toward chords native to the currently-active mode (Aeolian at
+      // the engine's home; brighter modes during negative-x excursions;
+      // Phrygian during positive-x). The first chord (start state =
+      // Am7) is not mode-weighted — keeps the engine anchored at the
+      // lofi home; subsequent chords drift toward the active mode.
+      const positionX = this.state.position.evaluate(time).x;
+      const modeWeights = blendChordWeights(modesAtPosition(positionX));
       let chordName: ChordName;
       if (this.nextChordIdx === 0) {
         chordName = this.walk.peek();
       } else {
-        chordName = this.walk.next();
+        chordName = this.walk.next(modeWeights);
       }
       const chord = CHORDS[chordName];
       // Position-driven register drift: sampled at the chord-change

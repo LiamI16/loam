@@ -6,6 +6,7 @@ import {
   dominantModeAtPosition,
   MODE_POOLS,
   MODES_ORDER,
+  modeMidiBag,
   modesAtPosition,
 } from '../src/index.js';
 
@@ -132,5 +133,19 @@ describe('modes (Stage 7c.1)', () => {
     expect(dominantModeAtPosition(-0.1)).toBe('aeolian');
     // x = -0.4 sits closer to dorian (-0.25) than mixolydian (-0.5)
     expect(dominantModeAtPosition(-0.3)).toBe('dorian');
+  });
+
+  it('modeMidiBag materializes the mode scale over A4-C6', () => {
+    // Aeolian scale pcs = [9, 0, 2, 4, 7, 5] (A C D E G F).
+    // MIDI 69-84 with those pcs: 69(A4), 72(C5), 74(D5), 76(E5),
+    // 77(F5), 79(G5), 81(A5), 84(C6) — 8 notes.
+    const bag = modeMidiBag('aeolian');
+    expect(bag).toEqual([69, 72, 74, 76, 77, 79, 81, 84]);
+  });
+
+  it('modeMidiBag respects custom range', () => {
+    const bag = modeMidiBag('aeolian', 60, 71);
+    // C4-B4: pcs 0 (C), 2 (D), 4 (E), 5 (F), 7 (G), 9 (A) — 6 notes
+    expect(bag).toEqual([60, 62, 64, 65, 67, 69]);
   });
 });

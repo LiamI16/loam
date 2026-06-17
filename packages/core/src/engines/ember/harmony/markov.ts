@@ -96,17 +96,38 @@ export class MarkovChordWalk {
     return this.current;
   }
 
-  /** Step the chain, return the new current. */
-  next(): ChordName {
+  /**
+   * Step the chain, return the new current. If `modeWeights` is provided
+   * (Stage 7c.2), each transition weight is multiplied by the target
+   * chord's mode weight before sampling — biases the walk toward the
+   * currently-active mode's chord pool. Missing entries in `modeWeights`
+   * are treated as 0 (chord excluded from this step).
+   *
+   * Calling `next()` without arguments preserves Stage 6 behavior
+   * exactly — the locked-sequence test in `harmony-markov.test.ts` still
+   * passes unchanged.
+   */
+  next(modeWeights?: Readonly<Partial<Record<ChordName, number>>>): ChordName {
     const row = this.matrix[this.current];
     const entries = Object.entries(row) as [ChordName, number][];
-    const total = entries.reduce((s, [, w]) => s + (w > 0 ? w : 0), 0);
+    const effective: [ChordName, number][] = modeWeights
+      ? entries.map(([name, w]) => [name, w * (modeWeights[name] ?? 0)])
+      : entries;
+    const total = effective.reduce((s, [, w]) => s + (w > 0 ? w : 0), 0);
     if (total <= 0) {
-      this.current = this.rng.pick(CHORD_NAMES);
+      // No reachable transition under the mode mask. Fall back to a
+      // uniform pick over chords the mode *does* allow, if any; else
+      // uniform over the full vocab.
+      if (modeWeights) {
+        const allowed = CHORD_NAMES.filter((n) => (modeWeights[n] ?? 0) > 0);
+        this.current = this.rng.pick(allowed.length > 0 ? allowed : CHORD_NAMES);
+      } else {
+        this.current = this.rng.pick(CHORD_NAMES);
+      }
       return this.current;
     }
     let u = this.rng.nextFloat() * total;
-    for (const [name, w] of entries) {
+    for (const [name, w] of effective) {
       if (w <= 0) continue;
       u -= w;
       if (u <= 0) {
@@ -115,7 +136,7 @@ export class MarkovChordWalk {
       }
     }
     // Float drift fallback: take the last positive entry.
-    const last = entries.reverse().find(([, w]) => w > 0);
+    const last = [...effective].reverse().find(([, w]) => w > 0);
     this.current = last ? last[0] : this.rng.pick(CHORD_NAMES);
     return this.current;
   }
