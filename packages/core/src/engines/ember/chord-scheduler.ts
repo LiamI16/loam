@@ -9,7 +9,6 @@ import {
   HAND_MATRIX,
   MarkovChordWalk,
   perturbMatrix,
-  type Register,
   type TransitionMatrix,
   voiceChord,
 } from './harmony/index.js';
@@ -35,17 +34,25 @@ import {
 const BASS_LOW = 36;
 const BASS_HIGH = 50;
 
-/** Voicing register characteristics, per-seed. Center wanders within
- * [-10, +15] semitones of MIDI 64 (E4) — asymmetric because the low
- * end gets muddy / muffled past about -10 (chords overlap the pad and
- * lose definition), while the bright high end stays musical out to
- * +15 (Wurlitzer / vibraphone / low-celesta territory). Width is fixed
- * at 24 (two octaves) — wide enough that the greedy solver always
- * finds a chord tone within reach. */
+/** Voicing register characteristics. Stage 6 set this as a fixed
+ * per-seed shift in [-11, +13]. Stage 7a splits the same total
+ * envelope into two contributions: a per-seed base shift (chosen at
+ * construction, defines the seed's home register) and a position-y
+ * driven drift (slow exploration around that home during playback).
+ * Combined reach: [-11, +13] semitones around MIDI 64, unchanged.
+ *
+ * Split: base ∈ [-5, +7], drift = ±6 → total ∈ [-11, +13]. Base range
+ * shrunk from [-11, +13] to leave drift headroom while preserving the
+ * proven envelope. See `current-stage-list.md` Stage 7a notes for the
+ * tradeoff vs option C ("no per-seed base, register entirely
+ * position-driven") which is parked for a future tuning pass — more
+ * philosophically aligned with the position-space framing but loses
+ * the per-seed register identity at t=0. */
 const REGISTER_WIDTH = 24;
 const REGISTER_CENTER_DEFAULT = 64;
-const REGISTER_CENTER_MIN_SHIFT = -11;
-const REGISTER_CENTER_MAX_SHIFT = 13;
+const REGISTER_CENTER_MIN_SHIFT = -5;
+const REGISTER_CENTER_MAX_SHIFT = 7;
+const REGISTER_DRIFT_AMPLITUDE = 6;
 
 /** Probability a held chord re-articulates an inner voice an octave up
  * at bar 1 (mid-cycle). Per `docs/lofi-study.md` §11 voicing rotation —
@@ -63,7 +70,9 @@ export class ChordScheduler implements SubScheduler {
   private nextChordIdx = 0;
   private readonly perturbed: TransitionMatrix;
   private readonly secondsPerChord: number;
-  private readonly register: Register;
+  /** Per-seed home register center, in MIDI semitones. The drift from
+   * `state.position.y` rides on top of this at chord-change time. */
+  private readonly homeCenter: number;
 
   constructor(
     private readonly seed: Seed,
@@ -71,15 +80,13 @@ export class ChordScheduler implements SubScheduler {
   ) {
     this.secondsPerChord = (60 / state.bpm) * 4 * 2; // 2 bars in 4/4
     this.perturbed = perturbMatrix(HAND_MATRIX, seed.child('markov-config').rng(), { alpha: 20 });
-    // Per-seed voicing register fingerprint: integer center shift so the
-    // chord pitches fall on whole semitones (no detuning).
+    // Per-seed voicing register fingerprint: integer base shift so the
+    // chord pitches fall on whole semitones at t=0. Drift is added per
+    // chord change from position.y (float OK there — register low/high
+    // are computed as Math.floor / Math.ceil bounds).
     const registerRng = seed.child('voicing-register-config').rng();
-    const centerShift = registerRng.nextInt(REGISTER_CENTER_MIN_SHIFT, REGISTER_CENTER_MAX_SHIFT);
-    const center = REGISTER_CENTER_DEFAULT + centerShift;
-    this.register = {
-      low: center - Math.floor(REGISTER_WIDTH / 2),
-      high: center + Math.ceil(REGISTER_WIDTH / 2),
-    };
+    const baseShift = registerRng.nextInt(REGISTER_CENTER_MIN_SHIFT, REGISTER_CENTER_MAX_SHIFT);
+    this.homeCenter = REGISTER_CENTER_DEFAULT + baseShift;
     this.reset();
   }
 
@@ -107,7 +114,17 @@ export class ChordScheduler implements SubScheduler {
         chordName = this.walk.next();
       }
       const chord = CHORDS[chordName];
-      const voicing = voiceChord(this.prevVoicing, chord, { register: this.register });
+      // Position-driven register drift: sampled at the chord-change
+      // boundary (not mid-chord — re-voicing held notes mid-cycle
+      // would be a salient event). position.y is roughly in [-1, 1];
+      // scaled by ±6 semitones around the seed's home center.
+      const center =
+        this.homeCenter + this.state.position.evaluate(time).y * REGISTER_DRIFT_AMPLITUDE;
+      const register = {
+        low: Math.floor(center - REGISTER_WIDTH / 2),
+        high: Math.ceil(center + REGISTER_WIDTH / 2),
+      };
+      const voicing = voiceChord(this.prevVoicing, chord, { register });
       this.prevVoicing = voicing;
       this.state.currentChord = chord;
 

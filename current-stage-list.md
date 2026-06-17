@@ -193,30 +193,92 @@ sequences untouched ✓; demo build green ✓.
 
 ---
 
-## Stage 7 (sketch) — Position-space drift + listen-distance fBm
+## Stage 7 — Position-space drift + listen-distance fBm
 
 > Re-scoped during Stage 6/6.5 planning (2026-06-16). Original "Lorenz
-> macro mood" sketch parked in favor of the framing below — see
-> conversation history for the design discussion.
+> macro mood" sketch parked in favor of the framing below.
+>
+> Split into sub-stages so each is independently listen-testable:
+> **7a** = position substrate + register drift; **7b** = listen-
+> distance fBm extension; **7c** = mode drift.
 
 A single slow 2D position vector wanders through a seed-defined
-parameter landscape, biasing musical surfaces. Driver = two independent
-slow fBm streams (Option A — reuses Stage 5 `FbmParam`). No lobe /
-regime behavior; continuous smooth drift only (the "cafe music" goal:
-chosen vibe + internal exploration + no audible transitions).
+parameter landscape, biasing musical surfaces. Driver = two
+independent slow fBm streams (`PositionStream` wraps two `Fbm1D`).
+No lobe / regime behavior; continuous smooth drift only (the "café
+music" goal: chosen vibe + internal exploration + no audible
+transitions).
 
-**Position biases (Stage 7 scope):**
-- **Voicing register center** — slowly drifts the per-seed register
-  the voicing solver targets. Trivial — the solver already takes a
-  register; just make it time-varying.
-- **Mode** — same tonic, different scale degree alteration (Aeolian ↔
-  Dorian ↔ Phrygian ↔ Lydian ↔ Mixolydian). Harmony module gains a
-  concept of "current mode"; chord vocabulary indexed by mode.
+### Stage 7a — Position substrate + voicing register drift ✅
 
-**Listen-distance fBm extension:** more channels of slow drift on
-effect / mix parameters layered on top of the position substrate
-(reverb wet, stereo width, instrument balance). Cheap perceptual
-variation, lives on top of the structural drift.
+**Position primitive (`packages/core/src/params/`)**
+- [x] `position-stream.ts` — `PositionStream`, wraps two independent
+      `Fbm1D` instances under `seed.child('position-x')` and
+      `seed.child('position-y')`. `.evaluate(t) → {x, y}`. Both coords
+      roughly in `[-1, 1]`.
+- [x] `index.ts` re-exports `PositionStream`, `Position`,
+      `PositionStreamOptions`.
+- [x] Tests: 4 (bounds, same-seed, different-seeds, locked sequence).
+
+**Engine wiring**
+- [x] `EngineState.position: PositionStream` added.
+- [x] `EmberEngine` constructs `PositionStream` at construction with
+      `baseFreq = 0.0014` (slowest octave period ~12 min) and 3 octaves
+      of fBm (multi-scale: slow drift + faster wobble in one signal).
+      Tuned for study as the primary use case — ~1 perceived drift
+      transition per 10–15 min. Travelers crank `speedMultiplier` to
+      get faster transitions across the board rather than via an
+      exploration-rate knob (avoids the surface becoming a synthesizer).
+- [x] `ChordScheduler` reads `state.position.evaluate(time).y` at each
+      chord-change boundary (not mid-chord — re-voicing held notes
+      would be a salient event).
+
+**Register-budget split (Option A from planning):**
+- [x] Per-seed base shift range shrunk from `[-11, +13]` to
+      `[-5, +7]` (12-semitone range, same `nextInt` derivation).
+- [x] Position-driven drift amplitude = ±6 semitones, applied on top
+      of the per-seed base per chord.
+- [x] Combined reach: `[-11, +13]` semitones around MIDI 64 —
+      identical to the proven Stage 6 envelope, just split into
+      "what the seed picked" + "what's happening right now."
+
+**Tests:** 64 → 68. All green.
+- 4 `PositionStream` tests (above).
+- Engine fingerprint **deliberately reset** — first 4 Rhodes pitches
+  now `60/64/67/69` (was `52/55/57/60`). Spec break: Stage 7a shifts
+  every saved seed's voicing register. Documented in
+  `docs/seed-format.md` §7.3a as a new locked-sequence layer.
+
+**Design assumptions captured:**
+- `docs/seed-format.md` §7.3a extended — `PositionStream.evaluate(t)`
+  added as a new locked-sequence layer.
+- `chord-scheduler.ts` comment block documents Option A vs Option C
+  tradeoff (Option C = no per-seed base, register entirely position-
+  driven — parked for a future tuning pass; more philosophically
+  aligned with the position-space framing but loses crisp per-seed
+  register identity at t=0).
+
+**Done when:** register audibly drifts during a session ✓; same seed
+still has a recognizable home register ✓; locked sequences pinned for
+the new layer ✓; all green ✓.
+
+### Stage 7b (sketch) — Listen-distance fBm extension
+
+Extend Stage 5's `ParamEvent` pattern to more effect / mix channels
+on top of the 7a substrate. Candidates: reverb wet, stereo width,
+instrument balance (Rhodes vs pad). Cheap perceptual variation —
+"how you hear it" evolves alongside "what's being played." Each
+extra channel = one more `FbmParam` + one more adapter `ParamSetter`.
+
+### Stage 7c (sketch) — Mode drift
+
+Same tonic, different scale degree alteration (Aeolian ↔ Dorian ↔
+Phrygian ↔ Lydian ↔ Mixolydian). Driven by `position.x` (the other
+position coord — y is taken by 7a register drift). Harmony module
+gains a concept of "current mode"; chord vocabulary indexed by mode
+or weighted to favor mode-characteristic chords. Real music-theory
+work; decide architecture after auditioning 7a + 7b to see how much
+exploration the substrate alone already delivers.
 
 **Deferred to Stage 7.5:** key drift with pivot-chord modulation
 (requires real music-theory work to keep transitions smooth).

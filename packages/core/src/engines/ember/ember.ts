@@ -2,6 +2,7 @@ import type { Engine } from '../../engine.js';
 import type { EngineEvent, ParamEvent, TickEvent } from '../../events.js';
 import { Fbm1D } from '../../noise/fbm.js';
 import { FbmParam, type ParamStream, StaticParam } from '../../params/param-stream.js';
+import { PositionStream } from '../../params/position-stream.js';
 import type { Seed } from '../../rng/seed.js';
 import { ChordScheduler } from './chord-scheduler.js';
 import { CrackleScheduler } from './crackle-scheduler.js';
@@ -48,6 +49,10 @@ export interface EngineState {
   /** Active chord at engine-time of the most recent chord emission.
    * `ChordScheduler` writes; `MelodyScheduler` reads for its filter. */
   currentChord: ChordSymbol | null;
+  /** Stage 7a substrate. Slow 2D fBm-driven walk through the seed's
+   * parameter landscape. Consumers read coords per emission and map to
+   * whatever musical surface they bias. */
+  position: PositionStream;
 }
 
 /** What sub-schedulers do — emit events in `[from, to)`. */
@@ -117,10 +122,22 @@ export class EmberEngine implements Engine {
     const densityFbm = new Fbm1D(seed.child('density-fbm'));
     const evoFbm = new Fbm1D(seed.child('evofilter-fbm'));
 
+    // Stage 7a: slow 2D position. baseFreq 0.0014 Hz → slowest octave
+    // period ~12 min, faster wobble layered on top via the 3 fBm
+    // octaves. Tuned for study (sustained focus) as the primary use
+    // case — listener should perceive maybe one drift transition per
+    // 10–15 min. Travelers can crank `speedMultiplier` to taste.
+    // Consumers read .evaluate(t) per emission.
+    const position = new PositionStream(seed.child('position'), {
+      baseFreq: 0.0014,
+      octaves: 3,
+    });
+
     this.state = {
       bpm,
       vinylEnabled,
       currentChord: null,
+      position,
       densityStream: new FbmParam(densityFbm, {
         mean: densityMean,
         depth: densityDepth,

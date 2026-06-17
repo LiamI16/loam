@@ -177,6 +177,10 @@ sequence test. Current set:
   α=20 perturbation under `Seed.from(42n).child('harmony/markov-config')`;
   locks the Marsaglia–Tsang gamma sampler, Box–Muller normal, and
   Dirichlet normalization.
+- `PositionStream.evaluate(t)` (Stage 7a) — known `(x, y)` floats at
+  `t = 0, 60, 120` under `Seed.from(42n).child('position')`; locks the
+  two-independent-fBm composition that drives all position-derived
+  biases (voicing register drift, future mode/key drift).
 
 **Implication:** each layer's contract pins that layer specifically.
 A failing PRNG contract means the PRNG changed; a failing fBm contract
