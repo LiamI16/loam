@@ -13,4 +13,14 @@ export {
   type TransitionMatrix,
   type TransitionRow,
 } from './markov.js';
+export {
+  blendChordWeights,
+  dominantModeAtPosition,
+  type Mode,
+  MODE_POOLS,
+  MODES_ORDER,
+  type ModePool,
+  type ModeWeight,
+  modesAtPosition,
+} from './modes.js';
 export { DEFAULT_REGISTER, type Register, type VoiceOptions, voiceChord } from './voicing.js';

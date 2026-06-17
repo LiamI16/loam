@@ -319,15 +319,68 @@ layer gets meaningfully stronger.
 brightness drifts independently of music brightness ✓; chorus
 texture wanders ✓; same seed reproducible ✓; all green ✓.
 
-### Stage 7c (sketch) — Mode drift
+### Stage 7c — Mode drift (sub-staged 7c.1 + 7c.2)
 
-Same tonic, different scale degree alteration (Aeolian ↔ Dorian ↔
-Phrygian ↔ Lydian ↔ Mixolydian). Driven by `position.x` (the other
-position coord — y is taken by 7a register drift). Harmony module
-gains a concept of "current mode"; chord vocabulary indexed by mode
-or weighted to favor mode-characteristic chords. Real music-theory
-work; decide architecture after auditioning 7a + 7b to see how much
-exploration the substrate alone already delivers.
+> Planning pass (2026-06-16) chose **Path B-C: modes of C** over the
+> initial Path B-A (vocabulary expansion / modes of A). Rationale:
+> mode-drift-without-key-drift is the explicit Stage 7c scope, and
+> introducing accidentals (F#, C#) for modes-of-A is partway toward
+> key drift — overlaps with Stage 7.5's territory. Modes-of-C
+> achieves authentic modal flavor (modal jazz works exactly this
+> way) while keeping a single key signature.
+
+#### Stage 7c.1 — Modes module (data layer) ✅
+
+Define the 6-mode pool architecture without using it yet. No behavior
+change in the engine; locked sequences unchanged.
+
+**Harmony module (`packages/core/src/engines/ember/harmony/`)**
+- [x] `modes.ts` — `Mode` union (Lydian / Ionian / Mixolydian /
+      Dorian / Aeolian / Phrygian), `MODE_POOLS` with per-mode
+      `{tonicChord, tonicPc, chordWeights, scalePcs}`, and helpers
+      `modesAtPosition(x)`, `blendChordWeights(active)`,
+      `dominantModeAtPosition(x)`.
+- [x] `MODES_ORDER` is the canonical bright→dark sequence.
+- [x] `index.ts` exports the new surface.
+
+**Mode-to-position mapping (Aeolian-centered, asymmetric):**
+- `x = -1.0` → Lydian (brightest, rare excursion)
+- `x = -0.75` → Ionian
+- `x = -0.50` → Mixolydian
+- `x = -0.25` → Dorian
+- `x =  0.0` → Aeolian (engine's home)
+- `x = +1.0` → Phrygian (darkest, single mode on the dark side)
+
+4 brighter modes pack into `x ∈ [-1, 0]`; Phrygian gets all of
+`x ∈ (0, +1]`. Since `position.x` is mean-zero-ish (fBm), the engine
+spends most time near Aeolian + adjacent (Dorian / Phrygian);
+bright-mode visits are uncommon. Crossfade between any two adjacent
+knots = two-mode blend with weights summing to 1.
+
+**Chord pool design (modes of C, no accidentals):**
+- All `scalePcs` are subsets of `{C D E F G A B}`.
+- Each mode's tonic chord weight = 1.0 (gravitational center).
+- Diatonic-strong = 0.6–0.9 (subdominant, dominant in major modes;
+  iv, bVI, bVII in minor modes).
+- Borrowed colors (`Fm6`, `Bbmaj7`) only appear in Aeolian at weight
+  0.25 — all other modes exclude them.
+
+**Tests:** 68 → 81 (13 new modes tests covering tonic / scale-pcs
+key-signature check / chord weights / blend / dominant / position
+mapping edges).
+
+**Engine fingerprint unchanged** — 7c.1 ships data only; the Markov
+walk still operates as if Aeolian were the only mode.
+
+#### Stage 7c.2 (sketch) — Wire mode blending
+
+- Update `MarkovChordWalk.next()` to accept a `modeWeights` map and
+  multiply transition weights at sample time.
+- `ChordScheduler` reads `position.x` per chord change, computes
+  `modesAtPosition` + `blendChordWeights`, passes to walk.
+- `MelodyScheduler` reads `dominantModeAtPosition(position.x)` per
+  emission, picks pitches from that mode's `scalePcs`.
+- Smooth crossfade is automatic from the two-mode blend.
 
 **Deferred to Stage 7.5:** key drift with pivot-chord modulation
 (requires real music-theory work to keep transitions smooth).
