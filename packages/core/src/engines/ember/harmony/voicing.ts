@@ -1,32 +1,34 @@
-import { type ChordSymbol, chordPitchClasses } from './chords.js';
+import { type ChordSymbol, chordPitchClasses, type Quality } from './chords.js';
 
 /**
- * Pure voice-leading solver: given a previous voicing (or none) and a
- * target chord, build the next voicing by moving each voice the
- * minimum semitone distance to a tone of the new chord.
+ * Voicing strategies (archetypes) for chord comping. Four flavors, all
+ * built from the chord's pitch-class membership and the supplied
+ * register:
  *
- * Algorithm:
- *   1. Common-tone retention is automatic: if a previous pitch's pitch
- *      class is in the new chord, distance is 0 and it stays.
- *   2. Otherwise, each previous voice greedily picks the nearest chord
- *      tone — searching all candidate octaves within the register.
+ *   - `close`    — current Phase-1 behavior. Greedy min-motion voice
+ *                  leading from `prev`. Tightly clustered voicings near
+ *                  the previous voicing's register.
+ *   - `spread`   — close voicing with drop-2 or drop-3 applied (the
+ *                  2nd-from-top or 3rd-from-top voice dropped one
+ *                  octave). Standard jazz-piano openness.
+ *   - `rootless` — chord intervals minus the root and the 5. Adds the
+ *                  9 if not already present so the voicing has ≥ 3
+ *                  voices. The downbeat instrument (pad / bass) covers
+ *                  the root, so the chord voicing carries colour only.
+ *   - `quartal`  — three voices stacked in 4ths from a chord-tone seed.
+ *                  Sparse, open, modal flavour. Voice count = 3 (not 4)
+ *                  on purpose; quartal voicings are airier when thin.
  *
- * Constraints:
- *   - All output pitches lie in `register.low..register.high`.
- *   - Output is sorted ascending. Voice count matches `prev`.
+ * Voice-leading: only `close` smooths from `prev`. Other archetypes
+ * build deterministically (same chord → same voicing within an
+ * archetype), so consecutive same-archetype slots stay register-stable
+ * without explicit smoothing. Archetype transitions reset voicing
+ * (see scheduler — `prev` is passed as null on archetype change).
  *
- * Initial voicing (no previous): pick the first 4 intervals of the chord
- * starting from `register.low + 7` (a Rhodes-friendly mid range). This
- * matches the prototype's seeding behavior.
- *
- * Extension thinning: when a chord has more intervals than the voicing
- * can hold, `trimIntervals` drops the 5 first, then 9, then 13 — per the
- * §4 priority — so color extensions (♯11, 11, 9) are actually heard.
- *
- * Not yet implemented (Stage 7+ refinement):
- *   - Top-voice continuity (currently emerges from min-motion but
- *     isn't enforced).
- *   - Drop-2 / drop-3 spread voicings.
+ * Extension-thinning (`trimIntervals`) applies only to the `close`
+ * archetype where the close-voicing 4-voice target is meaningful.
+ * Spread inherits trimming via close. Rootless and quartal compute
+ * their voicings from scratch.
  */
 
 export interface Register {
@@ -39,10 +41,20 @@ export interface Register {
 /** Default Rhodes-ish mid register: E3–E5. */
 export const DEFAULT_REGISTER: Register = { low: 52, high: 76 };
 
+export type Archetype = 'close' | 'spread' | 'rootless' | 'quartal';
+
+export const ARCHETYPES: readonly Archetype[] = ['close', 'spread', 'rootless', 'quartal'];
+
 export interface VoiceOptions {
-  /** Target voice count when no previous voicing is supplied. Defaults to 4. */
+  /** Voicing strategy. Defaults to `'close'` (back-compat). */
+  readonly archetype?: Archetype;
+  /** Target voice count for `close` (and `spread`-derived). Defaults
+   * to `prev.length` if `prev` non-null, else 4. Rootless and quartal
+   * ignore this (they have natural voice counts). */
   readonly targetVoices?: number;
   readonly register?: Register;
+  /** Spread variant: drop-2 (default) or drop-3. */
+  readonly spreadDrop?: 2 | 3;
 }
 
 /**
@@ -54,25 +66,127 @@ export function voiceChord(
   opts: VoiceOptions = {},
 ): number[] {
   const register = opts.register ?? DEFAULT_REGISTER;
+  const archetype = opts.archetype ?? 'close';
   const targetVoices = opts.targetVoices ?? prev?.length ?? 4;
-  // Trim the chord to `targetVoices` intervals using the §4 priority (drop
-  // 5 first, then 9, then 13). Both the seed-voicing path and the greedy
-  // assignment use the trimmed pitch classes so the color extensions
-  // (♯11, 11, 9) are actually heard, not lost to the 5 they're competing
-  // with on minimum-motion grounds.
+  switch (archetype) {
+    case 'close':
+      return voiceClose(prev, chord, register, targetVoices);
+    case 'spread':
+      return voiceSpread(prev, chord, register, targetVoices, opts.spreadDrop ?? 2);
+    case 'rootless':
+      return voiceRootless(chord, register);
+    case 'quartal':
+      return voiceQuartal(chord, register);
+  }
+}
+
+/** Close-position voice-leading (the prototype's default). */
+function voiceClose(
+  prev: readonly number[] | null,
+  chord: ChordSymbol,
+  register: Register,
+  targetVoices: number,
+): number[] {
   const trimmed = trimIntervals(chord.intervals, targetVoices);
   const trimmedChord: ChordSymbol = { ...chord, intervals: trimmed };
   const pcs = chordPitchClasses(trimmedChord);
-
   if (!prev || prev.length === 0) {
     return seedVoicing(trimmedChord, register, targetVoices);
   }
-
   const voicing: number[] = [];
   for (const p of prev) {
     voicing.push(nearestPitchInPcs(p, pcs, register));
   }
   return voicing.sort((a, b) => a - b);
+}
+
+/** Spread voicing = close voicing with one voice dropped an octave.
+ * If the dropped voice would fall below the register's low bound, the
+ * voice immediately above it is dropped instead (graceful fallback). */
+function voiceSpread(
+  prev: readonly number[] | null,
+  chord: ChordSymbol,
+  register: Register,
+  targetVoices: number,
+  drop: 2 | 3,
+): number[] {
+  const close = voiceClose(prev, chord, register, targetVoices);
+  if (close.length < drop + 1) return close.slice().sort((a, b) => a - b);
+  const out = close.slice();
+  // Drop the Nth-from-top voice (drop-2 = 2nd from top, drop-3 = 3rd).
+  let idx = out.length - drop;
+  let candidate = (out[idx] as number) - 12;
+  if (candidate < register.low) {
+    // Try the next-from-top voice instead.
+    idx = out.length - drop - 1;
+    if (idx < 0) return close.slice().sort((a, b) => a - b);
+    candidate = (out[idx] as number) - 12;
+    if (candidate < register.low) return close.slice().sort((a, b) => a - b);
+  }
+  out[idx] = candidate;
+  return out.sort((a, b) => a - b);
+}
+
+/** Rootless voicing: drop root + 5, add 9 if not present, build from
+ * scratch centred on the register. Three voices minimum. */
+function voiceRootless(chord: ChordSymbol, register: Register): number[] {
+  const intervals = rootlessIntervals(chord);
+  return placeFromScratch(chord.rootPc, intervals, register);
+}
+
+/** Quartal voicing: three voices stacked in perfect 4ths, starting
+ * from a chord-tone seed determined by quality. The "modal" archetype. */
+function voiceQuartal(chord: ChordSymbol, register: Register): number[] {
+  const startInterval = quartalStartInterval(chord.quality);
+  const intervals = [startInterval, startInterval + 5, startInterval + 10];
+  return placeFromScratch(chord.rootPc, intervals, register);
+}
+
+/** Quality-specific starting interval for quartal stacking. Chosen
+ * so the resulting voicing stays inside the chord's natural tones
+ * (consonant rather than tritone-substitution flavour):
+ *   - min*  / dom*: start at the 4 (5 semitones). Stack: 4, b7, b3.
+ *   - maj*       : start at the 7 (11 semitones). Stack: 7, 3, 6. */
+function quartalStartInterval(quality: Quality): number {
+  switch (quality) {
+    case 'maj7':
+    case 'maj9':
+    case 'maj7s11':
+      return 11;
+    default:
+      return 5;
+  }
+}
+
+/** Derive rootless intervals from a chord: drop root (0) and 5 (7),
+ * ensure 9 (14) is present so the voicing has ≥ 3 voices. */
+function rootlessIntervals(chord: ChordSymbol): number[] {
+  const kept = chord.intervals.filter((i) => i !== 0 && i !== 7);
+  if (!kept.includes(14)) kept.push(14);
+  return kept.sort((a, b) => a - b);
+}
+
+/** Convert an intervals-from-root spec into actual MIDI pitches placed
+ * near the centre of the register. Same chord → same pitches. */
+function placeFromScratch(rootPc: number, intervals: readonly number[], register: Register): number[] {
+  const center = Math.floor((register.low + register.high) / 2);
+  const out: number[] = [];
+  for (const i of intervals) {
+    const pc = ((rootPc + i) % 12 + 12) % 12;
+    // Nearest pitch to `center` with this pitch class, within register.
+    let best = -1;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (let p = register.low; p <= register.high; p++) {
+      if (((p % 12) + 12) % 12 !== pc) continue;
+      const d = Math.abs(p - center);
+      if (d < bestDist) {
+        bestDist = d;
+        best = p;
+      }
+    }
+    if (best >= 0) out.push(best);
+  }
+  return out.sort((a, b) => a - b);
 }
 
 /**
@@ -93,8 +207,6 @@ function trimIntervals(intervals: readonly number[], target: number): number[] {
     const i = kept.indexOf(d);
     if (i >= 0) kept.splice(i, 1);
   }
-  // Safety: if still too many (shouldn't happen with the current vocab),
-  // drop from the middle to preserve root and topmost extension.
   while (kept.length > target) kept.splice(Math.floor(kept.length / 2), 1);
   return kept;
 }
@@ -104,9 +216,6 @@ function nearestPitchInPcs(target: number, pcs: readonly number[], register: Reg
   let best = -1;
   let bestDist = Number.POSITIVE_INFINITY;
   for (const pc of pcs) {
-    // Project `pc` into octaves spanning the register and pick the closest
-    // to `target`. Allow one octave above the register top / below the
-    // bottom in the search, then clamp by re-projecting if needed.
     const lowOct = Math.floor((register.low - pc) / 12);
     const highOct = Math.ceil((register.high - pc) / 12);
     for (let oct = lowOct; oct <= highOct; oct++) {
@@ -120,8 +229,6 @@ function nearestPitchInPcs(target: number, pcs: readonly number[], register: Reg
     }
   }
   if (best < 0) {
-    // No in-register candidate (register narrower than 12 semitones and
-    // no pc lands inside). Fall back to the closest pc in any octave.
     for (const pc of pcs) {
       const candidate = pc + 12 * Math.round((target - pc) / 12);
       const dist = Math.abs(candidate - target);
@@ -145,4 +252,33 @@ function seedVoicing(chord: ChordSymbol, register: Register, voices: number): nu
     out.push(p);
   }
   return out.sort((a, b) => a - b);
+}
+
+/**
+ * Public utility: drop one random inner voice from a voicing. Used by
+ * the chord scheduler for per-bar micro-variation. Picks uniformly
+ * from indices [1, length-2] (exclusive of top and bottom). For
+ * voicings with < 3 voices, returns the input unchanged.
+ *
+ * The caller supplies the index (computed from a deterministic Rng) to
+ * keep this function pure.
+ */
+export function dropOneVoice(voicing: readonly number[], innerIndex: number): number[] {
+  if (voicing.length < 3) return voicing.slice();
+  const safeIdx = Math.max(1, Math.min(voicing.length - 2, innerIndex));
+  const out = voicing.slice();
+  out.splice(safeIdx, 1);
+  return out;
+}
+
+/**
+ * Public utility: rootless preview voicing for a chord, used by the
+ * pickup hit. Drops the bottom voice (root in close/spread, third in
+ * rootless, fourth in quartal). Caller passes the next slot's first-
+ * hit voicing already computed in the right archetype + register;
+ * this just slices off the bottom.
+ */
+export function rootlessVoicing(voicing: readonly number[]): number[] {
+  if (voicing.length <= 1) return voicing.slice();
+  return voicing.slice(1);
 }

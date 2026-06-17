@@ -69,6 +69,30 @@ function perturbRow(row: TransitionRow, rng: Rng, alpha: number): TransitionRow 
   return out;
 }
 
+/**
+ * Generic 1D Dirichlet perturbation for an array of base weights. Same
+ * concentration semantics as `perturbMatrix`: high α stays close to the
+ * prior, low α scatters. Used by the chord-scheduler archetype-weight
+ * draw; the matrix flavor stays as the convenience wrapper for full
+ * Markov rows.
+ *
+ * Returns a new array of the same length, summing to 1.
+ */
+export function perturbDirichlet(weights: readonly number[], rng: Rng, alpha: number): number[] {
+  const total = weights.reduce((s, w) => s + w, 0);
+  if (total <= 0) return weights.map(() => 0);
+  const draws: number[] = [];
+  let sum = 0;
+  for (const w of weights) {
+    const a = alpha * (w / total);
+    const g = sampleGamma(a, rng);
+    draws.push(g);
+    sum += g;
+  }
+  if (sum <= 0) return weights.map((w) => w / total);
+  return draws.map((g) => g / sum);
+}
+
 /** Standard normal via Box–Muller. One uniform pair → one normal. */
 function sampleStandardNormal(rng: Rng): number {
   // Avoid log(0).

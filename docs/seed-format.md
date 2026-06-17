@@ -200,11 +200,17 @@ reset is a v2 break for any saved seed. Recorded:
   comping scheduler. Adds seed children `chord-slot-bias-fbm/-config`,
   `chord-slot-length`, `chord-density-fbm/-config`, `chord-pickup`,
   `chord-sync-config/-` and `chord-velocity`. Removes
-  `voicing-wobble`. New fingerprint locked at count 116 with first 6
-  events pad-before-rhodes at t=0 (pad emission now runs during
-  slot-advance, ahead of per-bar hit rolls). Count includes the
-  same-day "beat 1 anchored every bar" tightening that followed a
-  listen pass — see chord-scheduler.ts for the why.
+  `voicing-wobble`. Locked initially at count 116; the same-day
+  "beat 1 anchored every bar" tightening kept count at 116.
+- 2026-06-17 (chord voicing variety C): adds four voicing archetypes
+  (close / spread / rootless / quartal) selected per slot from per-
+  seed Dirichlet-perturbed weights, plus drop-a-voice micro-variation
+  on bars 2+ and rootless-preview pickup. Adds seed children
+  `chord-archetype-config`, `chord-archetype`, `chord-micro`.
+  Fingerprint reset to count 112 with first 6 events
+  `hat / pad×2 / rhodes×3` — seed 42's first archetype roll is
+  quartal, producing a 3-voice (D-G-C) opening voicing rather than
+  the previous 4-voice close (C-E-G-A).
 
 ### 7.3 Derived methods aren't separately contract-locked
 

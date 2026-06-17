@@ -6,14 +6,19 @@ import type { Rng } from '../../rng/rng.js';
 import type { Seed } from '../../rng/seed.js';
 import type { EngineState, SubScheduler } from './ember.js';
 import {
+  type Archetype,
+  ARCHETYPES,
   blendChordWeights,
   CHORDS,
   type ChordName,
   type ChordSymbol,
+  dropOneVoice,
   HAND_MATRIX,
   MarkovChordWalk,
   modesAtPosition,
+  perturbDirichlet,
   perturbMatrix,
+  rootlessVoicing,
   type TransitionMatrix,
   voiceChord,
 } from './harmony/index.js';
@@ -38,9 +43,19 @@ import {
  *
  * Pad emits root + fifth at slot start, sustaining the slot length.
  *
- * Voicing micro-variation (per-hit) and archetype variation
- * (per-occurrence) are deferred — every hit within a slot uses the
- * slot's base voicing for now.
+ * Voicing variation (C — landed 2026-06-17):
+ *   - Per-slot **archetype**: close / spread / rootless / quartal,
+ *     rolled per slot from per-seed Dirichlet-perturbed weights
+ *     `[0.55, 0.20, 0.20, 0.05]` (α=20).
+ *   - Within-slot voice-leading only applies when consecutive slots
+ *     share an archetype (close-to-close, etc.). Archetype transitions
+ *     reset voicing — each archetype emits its natural voicing form.
+ *   - **Micro-variation**: bars 2+ of any slot have a 30% chance of
+ *     dropping one inner voice (the "thinned re-articulation" feel).
+ *     Bar 1 of every slot is always full.
+ *   - **Pickup** uses the next slot's archetype voicing with the
+ *     bottom voice dropped — rootless preview (the next downbeat
+ *     anchors the root).
  *
  * Per-seed identity: this scheduler exercises three layers of
  * `docs/seed-identity.md`:
@@ -63,6 +78,9 @@ import {
  *   - `chord-sync-config`          — per-seed Beta-drawn sync rate
  *   - `chord-sync`                 — per-bar sync rolls
  *   - `chord-velocity`             — velocity jitter
+ *   - `chord-archetype-config`     — per-seed Dirichlet archetype weights
+ *   - `chord-archetype`            — per-slot archetype rolls
+ *   - `chord-micro`                — per-bar drop-a-voice rolls (bars 2+)
  */
 
 /** Bass register for the pad root, MIDI C2 (36) – D3 (50). */
@@ -119,6 +137,18 @@ const VEL_BASE = 0.55;
 const VEL_JITTER = 0.08;
 const PICKUP_VEL_MULTIPLIER = 0.7;
 
+/** Archetype base weights — close-leaning baseline with quartal as
+ * rare colour. Per-seed Dirichlet-perturbed at α=20 (mirrors the
+ * Markov layer; mild perturbation that keeps every seed close to
+ * the prior). */
+const ARCHETYPE_BASE_WEIGHTS: readonly number[] = [0.55, 0.20, 0.20, 0.05];
+const ARCHETYPE_DIRICHLET_ALPHA = 20;
+
+/** Drop-a-voice probability per bar (bars 2+ of any slot). 30% gives
+ * ~0.9 thinned hits per 4-bar slot — subtle but audible. Bar 1 is
+ * always full (anchor). */
+const MICRO_DROP_PROBABILITY = 0.3;
+
 /** Hit durations in beats (multiplied by `60 / bpm` at emit). */
 const BEAT_1_DURATION_BEATS = 1.0;
 const BEAT_3_DURATION_BEATS = 0.75;
@@ -134,6 +164,8 @@ export class ChordScheduler implements SubScheduler {
   private pickupRng!: Rng;
   private syncRng!: Rng;
   private velocityRng!: Rng;
+  private archetypeRng!: Rng;
+  private microRng!: Rng;
   private walk!: MarkovChordWalk;
 
   /** Bar counter — advances by 1 each bar emitted. */
@@ -145,10 +177,12 @@ export class ChordScheduler implements SubScheduler {
   /** Active chord and its voicing for the current slot. */
   private currentChord: ChordSymbol | null = null;
   private currentVoicing: number[] | null = null;
+  private currentArchetype: Archetype = 'close';
   /** Pre-stepped lookahead: the chord starting at the next slot.
    * Computed at current slot start so pickups can voice it ahead. */
   private nextChord: ChordSymbol | null = null;
   private nextVoicing: number[] | null = null;
+  private nextArchetype: Archetype = 'close';
   /** Pad-root continuity tracker for nearest-octave selection. */
   private prevPadRoot: number | null = null;
   /** Bar index of the most recent off-beat sync hit; used for
@@ -164,6 +198,9 @@ export class ChordScheduler implements SubScheduler {
   /** Per-seed Beta-drawn sync rate. Drift would be invisible at
    * this event interval — see seed-identity.md carve-out. */
   private readonly syncRate: number;
+  /** Per-seed Dirichlet-perturbed archetype weights (sums to 1).
+   * Indexed parallel to `ARCHETYPES`. */
+  private readonly archetypeWeights: number[];
 
   constructor(
     private readonly seed: Seed,
@@ -204,6 +241,16 @@ export class ChordScheduler implements SubScheduler {
     const syncCfgRng = seed.child('chord-sync-config').rng();
     this.syncRate = sampleBeta(syncCfgRng, BETA_A, BETA_B) * SYNC_RATE_MAX;
 
+    // Per-seed Dirichlet-perturbed archetype weights. α=20 keeps every
+    // seed close to the [close, spread, rootless, quartal] = base, while
+    // still producing audibly different leans seed-to-seed.
+    const archCfgRng = seed.child('chord-archetype-config').rng();
+    this.archetypeWeights = perturbDirichlet(
+      ARCHETYPE_BASE_WEIGHTS,
+      archCfgRng,
+      ARCHETYPE_DIRICHLET_ALPHA,
+    );
+
     this.reset();
   }
 
@@ -213,8 +260,10 @@ export class ChordScheduler implements SubScheduler {
     this.currentSlotBars = SHORT_SLOT_BARS;
     this.currentChord = null;
     this.currentVoicing = null;
+    this.currentArchetype = 'close';
     this.nextChord = null;
     this.nextVoicing = null;
+    this.nextArchetype = 'close';
     this.prevPadRoot = null;
     this.lastSyncBar = -SYNC_REFRACTORY_BARS - 1;
     this.hitRng = this.seed.rng();
@@ -222,6 +271,8 @@ export class ChordScheduler implements SubScheduler {
     this.pickupRng = this.seed.child('chord-pickup').rng();
     this.syncRng = this.seed.child('chord-sync').rng();
     this.velocityRng = this.seed.child('chord-velocity').rng();
+    this.archetypeRng = this.seed.child('chord-archetype').rng();
+    this.microRng = this.seed.child('chord-micro').rng();
     this.walk = new MarkovChordWalk(this.perturbed, this.seed.child('markov-walk').rng(), 'Am7');
     this.state.currentChord = CHORDS[this.walk.peek()];
   }
@@ -265,9 +316,20 @@ export class ChordScheduler implements SubScheduler {
       const beat1Roll = this.hitRng.nextFloat();
       const beat3Roll = this.hitRng.nextFloat();
 
+      // Per-bar micro-variation roll: bar 1 is always full; bars 2+
+      // get a chance to drop one inner voice. Always consume the rng
+      // and the index roll to keep determinism stable regardless of
+      // which bar this is.
+      const microRoll = this.microRng.nextFloat();
+      const microIdxRoll = this.microRng.nextFloat();
+      const microFires = !isFirstBarOfSlot && microRoll < MICRO_DROP_PROBABILITY;
+      const hitVoicing = microFires
+        ? dropOneVoice(voicing, 1 + Math.floor(microIdxRoll * Math.max(1, voicing.length - 2)))
+        : voicing;
+
       if (syncFires) {
         const time = barTime + 2.5 * this.secondsPerBeat;
-        emitVoicing(events, voicing, time, this.velocity(), SYNC_DURATION_BEATS * this.secondsPerBeat);
+        emitVoicing(events, hitVoicing, time, this.velocity(), SYNC_DURATION_BEATS * this.secondsPerBeat);
         this.lastSyncBar = this.nextBarIdx;
       } else {
         // Beat 1 of every bar always fires. `beat1Roll` is consumed (for
@@ -281,25 +343,28 @@ export class ChordScheduler implements SubScheduler {
         void beat1Roll;
         void isFirstBarOfSlot;
         const time = barTime;
-        emitVoicing(events, voicing, time, this.velocity(), BEAT_1_DURATION_BEATS * this.secondsPerBeat);
+        emitVoicing(events, hitVoicing, time, this.velocity(), BEAT_1_DURATION_BEATS * this.secondsPerBeat);
       }
 
       const beat3Fires = beat3Roll < density;
       if (beat3Fires) {
         const time = barTime + 2 * this.secondsPerBeat;
-        emitVoicing(events, voicing, time, this.velocity(), BEAT_3_DURATION_BEATS * this.secondsPerBeat);
+        emitVoicing(events, hitVoicing, time, this.velocity(), BEAT_3_DURATION_BEATS * this.secondsPerBeat);
       }
 
       // Pickup: only on last bar of slot, only if we have a next-chord
-      // voicing to anticipate. Always roll for determinism.
+      // voicing to anticipate. Always roll for determinism. The pickup
+      // is a rootless preview — drop the bottom voice of the next
+      // slot's voicing so the next downbeat lands the anchor tone.
       const pickupRoll = this.pickupRng.nextFloat();
       if (isLastBarOfSlot && this.nextVoicing !== null) {
         const pickupFires = pickupRoll < PICKUP_PROB;
         if (pickupFires) {
           const time = barTime + 3.5 * this.secondsPerBeat;
+          const previewVoicing = rootlessVoicing(this.nextVoicing);
           emitVoicing(
             events,
-            this.nextVoicing,
+            previewVoicing,
             time,
             this.velocity() * PICKUP_VEL_MULTIPLIER,
             PICKUP_DURATION_BEATS * this.secondsPerBeat,
@@ -321,14 +386,17 @@ export class ChordScheduler implements SubScheduler {
       // Walk starts at Am7 (peek). First-chord voicing uses no prev.
       const firstName: ChordName = this.walk.peek();
       const firstChord = CHORDS[firstName];
+      const firstArchetype = this.rollArchetype();
       this.currentChord = firstChord;
-      this.currentVoicing = this.voiceFor(firstChord, null, barTime);
+      this.currentArchetype = firstArchetype;
+      this.currentVoicing = this.voiceFor(firstChord, null, barTime, firstArchetype);
       // Pre-step the walk so we know the next chord for pickups.
       this.preStepNext(barTime);
     } else {
       // Rotate pre-stepped next → current.
       this.currentChord = this.nextChord;
       this.currentVoicing = this.nextVoicing;
+      this.currentArchetype = this.nextArchetype;
       this.currentSlotStartBar = this.nextBarIdx;
       // Now compute the *new* next chord for the upcoming pickup window.
       this.preStepNext(barTime);
@@ -367,27 +435,47 @@ export class ChordScheduler implements SubScheduler {
   }
 
   /** Pre-step the Markov walk to compute the chord that will start
-   * at the *next* slot, voice it using the current voicing as prev,
-   * and store it. Used so the pickup can anticipate harmony. */
+   * at the *next* slot, roll its archetype, and voice it using the
+   * current voicing as `prev` only when the archetype matches (else
+   * reset — archetype transitions skip voice-leading per design). */
   private preStepNext(atTime: number): void {
     const positionX = this.state.position.evaluate(atTime).x;
     const modeWeights = blendChordWeights(modesAtPosition(positionX));
     const nextName = this.walk.next(modeWeights);
     const nextChord = CHORDS[nextName];
+    const nextArchetype = this.rollArchetype();
+    const prev = nextArchetype === this.currentArchetype ? this.currentVoicing : null;
     this.nextChord = nextChord;
-    this.nextVoicing = this.voiceFor(nextChord, this.currentVoicing, atTime);
+    this.nextArchetype = nextArchetype;
+    this.nextVoicing = this.voiceFor(nextChord, prev, atTime, nextArchetype);
   }
 
-  /** Voice a chord with position-driven register and voice-leading
-   * smoothing from prev. */
-  private voiceFor(chord: ChordSymbol, prev: number[] | null, time: number): number[] {
+  /** Voice a chord in the supplied archetype with position-driven
+   * register; voice-leading from `prev` only applies for `close`. */
+  private voiceFor(
+    chord: ChordSymbol,
+    prev: number[] | null,
+    time: number,
+    archetype: Archetype,
+  ): number[] {
     const center =
       this.homeCenter + this.state.position.evaluate(time).y * REGISTER_DRIFT_AMPLITUDE;
     const register = {
       low: Math.floor(center - REGISTER_WIDTH / 2),
       high: Math.ceil(center + REGISTER_WIDTH / 2),
     };
-    return voiceChord(prev, chord, { register });
+    return voiceChord(prev, chord, { register, archetype });
+  }
+
+  /** Roll one archetype from the per-seed Dirichlet-perturbed weights. */
+  private rollArchetype(): Archetype {
+    const roll = this.archetypeRng.nextFloat();
+    let acc = 0;
+    for (let i = 0; i < ARCHETYPES.length; i++) {
+      acc += this.archetypeWeights[i] ?? 0;
+      if (roll < acc) return ARCHETYPES[i] as Archetype;
+    }
+    return ARCHETYPES[ARCHETYPES.length - 1] as Archetype;
   }
 
   private velocity(): number {

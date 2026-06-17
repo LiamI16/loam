@@ -6,7 +6,7 @@ export {
   chordPitchClasses,
   type Quality,
 } from './chords.js';
-export { type DirichletOptions, perturbMatrix } from './dirichlet.js';
+export { type DirichletOptions, perturbDirichlet, perturbMatrix } from './dirichlet.js';
 export {
   HAND_MATRIX,
   MarkovChordWalk,
@@ -24,4 +24,13 @@ export {
   modeMidiBag,
   modesAtPosition,
 } from './modes.js';
-export { DEFAULT_REGISTER, type Register, type VoiceOptions, voiceChord } from './voicing.js';
+export {
+  type Archetype,
+  ARCHETYPES,
+  DEFAULT_REGISTER,
+  dropOneVoice,
+  type Register,
+  rootlessVoicing,
+  type VoiceOptions,
+  voiceChord,
+} from './voicing.js';

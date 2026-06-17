@@ -184,15 +184,19 @@ describe('EmberEngine', () => {
     // Reset on 2026-06-17 with the chord-comping bar-grid rewrite —
     // see docs/seed-format.md §7.3a. Pad now precedes rhodes voicing
     // at slot starts because the pad emission happens during the
-    // slot-advance step (before per-bar hit rolls).
+    // slot-advance step (before per-bar hit rolls). Voicing-variety
+    // (C) follow-up (same day): seed 42's first archetype roll lands
+    // on quartal, producing a 3-voice (D-G-C) voicing instead of the
+    // previous 4-voice close (C-E-G-A). Count drops by 4 across the
+    // 5 s window (3 voices instead of 4 on hits within the first slot).
     expect({ count: events.length, fingerprint }).toEqual({
-      count: 116,
+      count: 112,
       fingerprint: [
         'n:hat:42:-0.0030',
         'n:pad:45:0.0000',
         'n:pad:52:0.0000',
         'n:rhodes:60:0.0000',
-        'n:rhodes:64:0.0000',
+        'n:rhodes:62:0.0000',
         'n:rhodes:67:0.0000',
       ],
     });

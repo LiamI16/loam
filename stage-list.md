@@ -46,6 +46,7 @@ Compact summary — full implementation notes in the linked docs.
 | Bass scheduler | Separate bass voice, sparse root-on-beat-1 + maybe-fifth-on-beat-3 pattern | See below |
 | Stereo + per-instrument reverb | Send/return mixer; per-instrument pan + reverb send level | See below |
 | Chord comping (A: rhythm) | Bar-grid scheduler; {2,4}-bar slots; beat-1 anchor + density-driven hits + pickup + rare off-beat sync. Folded "B-lite": keys release 2.6 → 0.5 s. | See below |
+| Chord comping (C: voicing variety) | Four archetypes (close/spread/rootless/quartal), Dirichlet-perturbed per seed; drop-a-voice micro-variation; rootless-preview pickups | See below |
 
 **Drum rewrite details:** `drum-scheduler.ts` rewritten. Per-voice
 constant micro-timing (snare drag +15 ms, hat slight ahead −3 ms,
@@ -111,25 +112,22 @@ sorted after the pad notes; falls outside the first-6 lock window).
 
 ## Next up
 
-### Chord comping — voicing variety (B + C + D)
+### Chord comping — remaining (B envelope refinement + D vocabulary)
 
-A (rhythm) is done. Remaining work in the comping bundle:
+A (rhythm) and C (voicing variety) are done. Remaining:
 
-- **Hit envelope refinement.** Per-beat duration variation (beat 1
-  vs beat 3 vs pickup vs sync); possible per-seed envelope shape.
-  A folded a minimal piece (keys release 2.6 → 0.5 s) so comping
-  reads as comping; full envelope work still open.
-- **Voicing micro-variation per hit within a slot.** When the chord
-  re-articulates on bar 2 / 3 / 4 of a slot, slight voicing change
-  from bar 1 (drop a voice, swap inversion, add or remove the 9).
-- **Voicing archetype variation per chord re-occurrence.** Close /
-  spread / rootless / quartal picked per occurrence. Weighted to
-  favor close with rarer excursions. Per-seed weight perturbation
-  (Dirichlet, like the Markov layer).
-- **Altered dominants** (`7♯5`, `7♭5`, `7♭9`). Vocabulary expansion
-  in `harmony/chords.ts`.
-- **Chromatic approach tones.** Occasional chromatic voice motion
-  at slot transition.
+- **B — Hit envelope refinement.** Per-beat duration variation (beat
+  1 vs beat 3 vs pickup vs sync); possible per-seed envelope shape.
+  Honest call: with the 0.8 s release + voicing variety landed, this
+  may be in the "good enough" zone — worth a listen pass before
+  committing to the work.
+- **D — Vocabulary expansion + chromatic approach.**
+  - **Altered dominants** (`7♯5`, `7♭5`, `7♭9`) added to
+    `harmony/chords.ts`; soft chromatic-friction resolutions per
+    `docs/external-review.md` §A.4. Genre tension flag — these are
+    jazzier than calm lofi; might want to defer or scope tightly.
+  - **Chromatic approach tones.** One voice slides chromatically at
+    slot transition instead of jumping.
 
 **Design constraint — read first:** every per-seed parameter must
 follow the hybrid stack in
@@ -138,8 +136,54 @@ fBm drift + per-seed shape modifiers + couplings + mix bias. No
 per-seed fixed knobs (except under the rare-event carve-out), no
 categorical archetypes.
 
-**Files:** `chord-scheduler.ts`, `harmony/voicing.ts`,
-`harmony/chords.ts`, voicing tests.
+**Files:** `chord-scheduler.ts`, `harmony/chords.ts`,
+`harmony/markov.ts`, `harmony/voicing.ts` (chromatic-approach
+hook), tests.
+
+---
+
+## Recently done — chord voicing variety (C)
+
+Four voicing archetypes implemented in `harmony/voicing.ts` and
+woven into `chord-scheduler.ts` (2026-06-17). Decisions ironed out
+via discussion before code:
+
+- **Archetypes:** `close` (existing greedy min-motion voice
+  leading), `spread` (drop-2 applied to close), `rootless` (chord
+  intervals minus root and 5, plus 9 if absent — 3+ voice color
+  voicing), `quartal` (3-voice stacked-fourths; quality-specific
+  start tone — 4 for min/dom, 7 for maj).
+- **Selection:** per slot, sampled from per-seed Dirichlet-perturbed
+  weights (α=20) on base `[0.55, 0.20, 0.20, 0.05]`. Universal —
+  same weight vector for every chord (per-chord weight tables are
+  noted as a future improvement).
+- **Voice-leading:** within-archetype min-motion (close-to-close
+  smooths from prev). Archetype transitions reset to fresh voicing
+  — forcing smoothing across archetype boundaries produces hybrid
+  voicings that lose archetype identity.
+- **Micro-variation:** bars 2+ of any slot have a 30% chance of
+  dropping one inner voice (uniform pick from indices 1..N-2 of the
+  sorted voicing). Bar 1 always full.
+- **Pickup:** uses next slot's archetype voicing with the bottom
+  voice dropped (rootless preview — the next downbeat anchors the
+  root). Inherits archetype, doesn't roll its own.
+- **Engine fingerprint reset** count 116 → 112; seed 42's first
+  archetype roll lands on quartal, producing a 3-voice opening
+  voicing instead of 4-voice close. Documented in
+  `docs/seed-format.md` §7.3a.
+
+First instance of seed-identity §5 (per-seed structured-choice
+realization via Dirichlet) on top of the existing Markov layer.
+
+**Weight-tuning postscript (2026-06-17):** after a calibration
+pass the listener hit ear-fatigue (every variant started sounding
+similar). Decision: ship theory-anchored values
+(`[0.55, 0.20, 0.20, 0.05]`, α=20, drop=0.3) which match published
+calm-lofi voicing-distribution conventions (Levine, Evans / Pass
+analyses). Holistic re-tuning of chord weights deferred to after
+melody rewrite + counter-melody + arrangement + mix-bias land —
+chord's role in the mix changes substantially once those exist,
+so tuning now in isolation is premature.
 
 ---
 
