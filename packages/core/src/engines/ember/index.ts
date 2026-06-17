@@ -1,3 +1,4 @@
+export { BassScheduler } from './bass-scheduler.js';
 export { ChordScheduler } from './chord-scheduler.js';
 export { CrackleScheduler } from './crackle-scheduler.js';
 export { DrumScheduler } from './drum-scheduler.js';

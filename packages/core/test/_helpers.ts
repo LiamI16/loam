@@ -12,6 +12,7 @@ export function makeState(
     evoCutoffStream: new StaticParam(1800),
     vinylEnabled: opts.vinylEnabled ?? true,
     currentChord: null,
+    chordSchedule: [],
     position: new PositionStream(seed.child('position'), { baseFreq: 0.002, octaves: 3 }),
   };
 }

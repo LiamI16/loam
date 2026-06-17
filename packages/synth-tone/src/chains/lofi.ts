@@ -59,6 +59,21 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
     volume: -20,
   }).connect(chorus);
 
+  // ── bass voice (separate from pad's low end) ─────────────────────
+  // Sine bass with quick attack, low sustain, fast release — keeps the
+  // bass tight and percussive, avoiding sympathetic resonance from
+  // sustained low-end content (the "phone on table" effect). Routes
+  // straight to warmth (skipping chorus / evo / reverb) so it stays
+  // dry and punchy — that's the lofi bass aesthetic (think MF Doom's
+  // basslines, not a synth pad). Gentle lowpass tames any harmonics
+  // that creep above the fundamental.
+  const bassFilter = new Tone.Filter({ type: 'lowpass', frequency: 800 }).connect(warmth);
+  const bass = new Tone.Synth({
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.005, decay: 0.3, sustain: 0.4, release: 0.28 },
+    volume: -15,
+  }).connect(bassFilter);
+
   // ── drums: soft, muffled, mostly dry ─────────────────────────────
   const drumBus = new Tone.Filter({ type: 'lowpass', frequency: 4200, rolloff: -12 }).connect(
     warmth,
@@ -136,6 +151,14 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
       pad.triggerAttackRelease(freq, event.durationMs / 1000, audioTime, event.velocity);
     },
     releaseAll: () => pad.releaseAll(),
+  });
+
+  adapter.registerChannel(Channels.BASS, {
+    trigger: (event, audioTime) => {
+      const freq = Tone.Frequency(event.pitch, 'midi').toFrequency();
+      bass.triggerAttackRelease(freq, event.durationMs / 1000, audioTime, event.velocity);
+    },
+    releaseAll: () => bass.triggerRelease(),
   });
 
   adapter.registerChannel(Channels.KICK, {

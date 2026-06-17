@@ -104,6 +104,10 @@ export class ChordScheduler implements SubScheduler {
 
   scheduleUntil(_from: number, to: number): EngineEvent[] {
     const events: EngineEvent[] = [];
+    // Reset the per-window chord schedule. ChordScheduler runs first
+    // in EmberEngine.scheduleUntil; downstream schedulers (BassScheduler)
+    // read state.chordSchedule to know which chord is active when.
+    this.state.chordSchedule = [];
     while (this.nextChordIdx * this.secondsPerChord < to) {
       const time = this.nextChordIdx * this.secondsPerChord;
 
@@ -137,6 +141,7 @@ export class ChordScheduler implements SubScheduler {
       const voicing = voiceChord(this.prevVoicing, chord, { register });
       this.prevVoicing = voicing;
       this.state.currentChord = chord;
+      this.state.chordSchedule.push({ time, chord });
 
       const chordDurationMs = (this.secondsPerChord - 0.25) * 1000;
       const chordVelocity = 0.5 + this.rng.nextFloat() * 0.12;

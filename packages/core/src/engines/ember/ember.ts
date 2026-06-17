@@ -4,6 +4,7 @@ import { Fbm1D } from '../../noise/fbm.js';
 import { FbmParam, type ParamStream, StaticParam } from '../../params/param-stream.js';
 import { PositionStream } from '../../params/position-stream.js';
 import type { Seed } from '../../rng/seed.js';
+import { BassScheduler } from './bass-scheduler.js';
 import { ChordScheduler } from './chord-scheduler.js';
 import { CrackleScheduler } from './crackle-scheduler.js';
 import { DrumScheduler } from './drum-scheduler.js';
@@ -49,6 +50,11 @@ export interface EngineState {
   /** Active chord at engine-time of the most recent chord emission.
    * `ChordScheduler` writes; `MelodyScheduler` reads for its filter. */
   currentChord: ChordSymbol | null;
+  /** Per-scheduleUntil window: ChordScheduler appends `{time, chord}`
+   * for each chord it emits; downstream schedulers (BassScheduler)
+   * read this to know which chord is active at each moment in the
+   * window. Cleared by ChordScheduler at the start of each pass. */
+  chordSchedule: Array<{ time: number; chord: ChordSymbol }>;
   /** Stage 7a substrate. Slow 2D fBm-driven walk through the seed's
    * parameter landscape. Consumers read coords per emission and map to
    * whatever musical surface they bias. */
@@ -94,6 +100,7 @@ export class EmberEngine implements Engine {
   private speedMultiplier: number;
   private readonly state: EngineState;
   private readonly chords: ChordScheduler;
+  private readonly bass: BassScheduler;
   private readonly drums: DrumScheduler;
   private readonly melody: MelodyScheduler;
   private readonly crackle: CrackleScheduler;
@@ -150,6 +157,7 @@ export class EmberEngine implements Engine {
       bpm,
       vinylEnabled,
       currentChord: null,
+      chordSchedule: [],
       position,
       densityStream: new FbmParam(densityFbm, {
         mean: densityMean,
@@ -171,6 +179,7 @@ export class EmberEngine implements Engine {
     };
 
     this.chords = new ChordScheduler(seed.child('chords'), this.state);
+    this.bass = new BassScheduler(seed.child('bass'), this.state);
     this.drums = new DrumScheduler(seed.child('drums'), this.state);
     this.melody = new MelodyScheduler(seed.child('melody'), this.state);
     this.crackle = new CrackleScheduler(seed.child('crackle'), this.state);
@@ -208,8 +217,12 @@ export class EmberEngine implements Engine {
     const engineFrom = this.engineCursor;
     const engineUntil = engineFrom + (until - audioFrom) * mult;
 
+    // ChordScheduler runs first — it populates state.chordSchedule
+    // which BassScheduler reads.
+    const chordEvents = this.chords.scheduleUntil(engineFrom, engineUntil);
     const raw: EngineEvent[] = [
-      ...this.chords.scheduleUntil(engineFrom, engineUntil),
+      ...chordEvents,
+      ...this.bass.scheduleUntil(engineFrom, engineUntil),
       ...this.drums.scheduleUntil(engineFrom, engineUntil),
       ...this.melody.scheduleUntil(engineFrom, engineUntil),
       ...this.crackle.scheduleUntil(engineFrom, engineUntil),
@@ -245,6 +258,7 @@ export class EmberEngine implements Engine {
     this.engineCursor = 0;
     this.audioCursor = 0;
     this.chords.reset();
+    this.bass.reset();
     this.drums.reset();
     this.melody.reset();
     this.crackle.reset();

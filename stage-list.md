@@ -43,6 +43,7 @@ Compact summary — full implementation notes in the linked docs.
 | Stage | What | Notes |
 |---|---|---|
 | Drum rewrite | Per-bar variation + per-voice micro-timing + velocity accents + mild 16th-swing | See below |
+| Bass scheduler | Separate bass voice, sparse root-on-beat-1 + maybe-fifth-on-beat-3 pattern | See below |
 
 **Drum rewrite details:** `drum-scheduler.ts` rewritten. Per-voice
 constant micro-timing (snare drag +15 ms, hat slight ahead −3 ms,
@@ -57,30 +58,56 @@ assertions (drum-scheduler tests now seed-robust). Engine fingerprint
 deliberately reset — count 103 → 105 and first event is now the
 hat-with-offset at t=−0.003.
 
+**Bass scheduler details:** new `bass-scheduler.ts` parallels the
+chord scheduler. Sparse pattern: chord-derived root on beat 1 of
+every bar (always), root-or-fifth on beat 3 (55% per bar; of those
+30% play the fifth). Bass register C2–C3 (MIDI 36–48); roots use
+interpretation A (always lowest available in register).
+
+**Stickiness** (per-seed): on each chord change, the bass *might*
+stay on its current note instead of moving to the new chord's
+lowest root — provided that current note is still a chord tone of
+the new chord. Blends two real lofi techniques (clear chord-root
+motion at low stickiness, pedal-tone foundation at high stickiness).
+
+Two per-seed modes:
+- **70% of seeds (fixed):** one stickiness value in [0.2, 0.65],
+  used for the whole session. Crisp bass identity per seed.
+- **30% of seeds (drifting):** stickiness slowly drifts (fBm,
+  slowest octave ~3.3–5.5 min) around a per-seed mean in
+  [0.25, 0.6], clamped [0.05, 0.85]. Each seed in this bucket has
+  an internal narrative arc — sometimes moving with chords,
+  sometimes pedaling.
+
+Velocity 0.65 beat 1, 0.48 beat 3, ±5% jitter. Beat-1 duration
+700 ms, beat-3 350 ms — short on purpose to avoid sympathetic
+resonance from sustained sines ("phone on table" effect). Beats
+2 and 4 left silent (drum-and-bass pocket).
+
+Architectural addition: `EngineState.chordSchedule` (per-window
+list of `{time, chord}` entries). `ChordScheduler` clears and
+populates it during its scheduleUntil pass; `BassScheduler` reads
+it to know which chord is active at each bass emission. Cleanly
+separates bass voicing decisions from chord progression logic
+without duplicating Markov walk state.
+
+Adapter: new sine `bass` synth in `chains/lofi.ts`, routes through
+a tight 800 Hz lowpass then directly to warmth (skips chorus / evo
+/ reverb so the bass stays dry and punchy). Volume −15 dB.
+Envelope attack 0.005 / decay 0.3 / sustain 0.3 / release 0.18 —
+tight and percussive. `Channels.BASS` registered.
+
+Seed children: `bass` (per-beat rolls), `bass-mode` (fixed vs
+drift), `bass-stickiness-config` (value or drift mean+freq),
+`bass-stickiness-fbm` (drift noise; drifting mode only).
+
+Engine fingerprint count 105 → 108 (3 beat-1 bass emissions per 5 s
+window). First 6 events unchanged (bass at t=0 lands at MIDI 45,
+sorted after the pad notes; falls outside the first-6 lock window).
+
 ---
 
 ## Next up
-
-### Bass scheduler
-
-A missing instrument. Currently the pad does double-duty as bass
-(root + fifth, holds 4 bars). Real lofi almost always has a separate
-bass that *moves* — walking, syncopating, ghosting, accenting chord
-changes. Adding a proper bass voice fundamentally broadens the
-texture and addresses the "2-bar chord cycle feels repetitive" gap
-(half of which is the immobile bass).
-
-**New scheduler:** `bass-scheduler.ts` (parallels chord-scheduler).
-Reads `state.currentChord`, generates a walking/syncopated bass line
-keyed to the chord. New channel `Channels.BASS`. Adapter synth: an
-AM or sine bass with short envelope (separate from pad's AM blanket).
-
-**Files:** new `bass-scheduler.ts`, new bass synth in
-`chains/lofi.ts`, new `Channels.BASS`, `ember.ts` wiring.
-
----
-
-## Backlog (ordered by listening impact)
 
 ### Stereo + per-instrument reverb (audio chain mixing)
 
@@ -96,7 +123,7 @@ with outsized perceptual return.
 - Per-instrument reverb sends instead of one bus reverb.
 - Possibly: separate hat / kick / snare pans for stereo drum width.
 
-**Why third (not first):** the gain is biggest after drums + bass are
+**Why now (not first):** the gain is biggest after drums + bass are
 in their final form — pan + reverb decisions depend on knowing the
 final instrument set.
 
@@ -104,7 +131,9 @@ final instrument set.
 
 ---
 
-### 4. Melody rewrite — motifs + sustain + pickups
+## Backlog (ordered by listening impact)
+
+### Melody rewrite — motifs + sustain + pickups
 
 The melody currently has zero memory between notes (each pitch is an
 independent Bernoulli draw from a pentatonic bag). Real melodies
@@ -121,9 +150,9 @@ versus "noodling." User's other big listening complaint.
 - Pickup notes / anacrusis: phrase beginnings get a soft lead-in
   note instead of starting cold on the downbeat.
 
-**Why fourth:** addresses the user's "melody has no character"
-complaint. Drums + bass need to be in place first so the melody has
-something musical to sit on.
+**Why now:** addresses the "melody has no character" complaint.
+Drums + bass need to be in place first so the melody has something
+musical to sit on.
 
 **Files:** `melody-scheduler.ts`, melody tests, possibly the
 "Stage 9 L-system" sketch in archived planning notes (this stage
@@ -131,7 +160,7 @@ supersedes it).
 
 ---
 
-### 5. Arrangement controller — phrase structure + dropouts + silences
+### Arrangement controller — phrase structure + dropouts + silences
 
 The engine has no concept of "8-bar phrase" or "16-bar section." All
 instruments play continuously; nothing ever drops out. Real lofi
@@ -151,7 +180,7 @@ whether it plays.
 - Genuine silences allowed (the engine *can* go to just pad + crackle
   or just pad for short windows).
 
-**Why fifth:** requires drums + bass + melody to be in their final
+**Why now:** requires drums + bass + melody to be in their final
 form (only meaningful if there are multiple elements worth muting).
 
 **Files:** new `arrangement-controller.ts`, `ember.ts` wiring, every
@@ -159,7 +188,7 @@ sub-scheduler reads the mute mask.
 
 ---
 
-### 6. Chord voicing variety per occurrence
+### Chord voicing variety per occurrence
 
 Refinement on the existing chord scheduler. When `Am7` appears at
 bar 5 and again at bar 13, we voice it nearly identically. Real
@@ -184,7 +213,7 @@ real voicing-variation engine.
 
 ---
 
-### 7. Lofi texture nodes — wow/flutter, tape hiss, bitcrush, saturation
+### Lofi texture nodes — wow/flutter, tape hiss, bitcrush, saturation
 
 The canonical lofi texture knobs (per `docs/lofi-study.md` §9) that
 the current chain entirely lacks. Currently we have vinyl crackle
@@ -206,7 +235,7 @@ garnish.
 
 ---
 
-### 8. Timbre swaps + counter-melody
+### Timbre swaps + counter-melody
 
 Currently one Rhodes timbre handles both chords *and* melody. Real
 lofi often splits these — Rhodes for chords, melodica or muted Wurli
@@ -229,7 +258,7 @@ melodies have motifs + sustain instead of constant noodling).
 
 ---
 
-### 9. Key drift with pivot-chord modulation
+### Key drift with pivot-chord modulation
 
 The deferred "Stage 7.5" — drift the key center over many minutes
 (A minor → D minor → F major → back) using pivot-chord modulation to
@@ -246,7 +275,7 @@ position-stream second axis or new fBm driver.
 
 ---
 
-### 10. Ornament point-process
+### Ornament point-process
 
 The deferred "Stage 8" — implement the Cox + refractory point
 process from `docs/ornaments.md` for subtle salient events. Per-type
