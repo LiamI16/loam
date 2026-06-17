@@ -135,6 +135,21 @@ describe('EmberEngine', () => {
     for (const ev of second) expect(ev.time).toBeLessThan(4);
   });
 
+  it('derives BPM from the seed when options.bpm is omitted', () => {
+    // Each seed picks its own home tempo in [60, 90] BPM. Same seed →
+    // same BPM; different seeds → different BPMs (usually).
+    const a = new EmberEngine(Seed.from(42n));
+    const aBpm = a.getOptions().bpm;
+    expect(aBpm).toBeGreaterThanOrEqual(60);
+    expect(aBpm).toBeLessThanOrEqual(90);
+    // Same seed: same derived BPM.
+    const b = new EmberEngine(Seed.from(42n));
+    expect(b.getOptions().bpm).toBe(aBpm);
+    // Explicit override beats derivation.
+    const overridden = new EmberEngine(Seed.from(42n), { bpm: 100 });
+    expect(overridden.getOptions().bpm).toBe(100);
+  });
+
   it('speedMultiplier is clamped at the minimum', () => {
     const e = new EmberEngine(Seed.from(42n), { speedMultiplier: -1 });
     // Out-of-range collapses to the minimum (0.1) rather than throwing.
@@ -142,7 +157,10 @@ describe('EmberEngine', () => {
   });
 
   it('determinism contract — fixed seed produces a known fingerprint', () => {
-    const e = new EmberEngine(Seed.from(42n));
+    // BPM pinned explicitly to keep the lock stable across the per-seed
+    // BPM-derivation change. Seed-derived BPM is exercised by other
+    // tests (same-seed determinism, getOptions reporting).
+    const e = new EmberEngine(Seed.from(42n), { bpm: 74 });
     const events = e.scheduleUntil(5);
     // Fingerprint is the count + first 6 event signatures. Locks the engine
     // composition against accidental refactor. Values filled after first run.

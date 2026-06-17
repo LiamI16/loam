@@ -105,7 +105,14 @@ export class EmberEngine implements Engine {
   private readonly drumBusCutoffStream: FbmParam;
 
   constructor(seed: Seed, options: EmberOptions = {}) {
-    const bpm = options.bpm ?? 74;
+    // Per-seed BPM: each seed has its own home tempo in [60, 90] BPM
+    // (60 = very slow, almost ambient; 90 = moderately upbeat lofi).
+    // Stable for the session — tempo is part of the seed's identity,
+    // not a drift dimension. User can override explicitly via
+    // options.bpm (preserves back-compat and lets tests pin BPM for
+    // locked-sequence stability). Speed multiplier scales wall-clock
+    // playback on top.
+    const bpm = options.bpm ?? seed.child('bpm-config').rng().nextInt(60, 90);
     const densityMean = options.density ?? 0.18;
     const vinylEnabled = options.vinylEnabled ?? true;
     this.speedMultiplier = clampSpeed(options.speedMultiplier ?? 1.0);

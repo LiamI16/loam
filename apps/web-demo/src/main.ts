@@ -1,10 +1,9 @@
 import { EmberEngine, Seed } from '@loam/core';
 import { buildLofiChain, ToneAudioAdapter, volToDb } from '@loam/synth-tone';
 
-// Engine's natural tempo. Hidden from the user — the speed slider is
-// the user-facing tempo control. Will become seed-derived in a future
-// stage (each seed picks its own home BPM from a range).
-const ENGINE_BPM = 74;
+// Engine's home tempo is now seed-derived (each seed picks its own
+// BPM from a range). User-facing tempo control is the speed slider,
+// which scales playback on top.
 
 // ── seed handling ─────────────────────────────────────────────────
 function seedFromUrl(): bigint | null {
@@ -35,7 +34,9 @@ const seedInput = $<HTMLInputElement>('seed');
 function setBeatCss(bpm: number): void {
   stage.style.setProperty('--beat', `${60 / bpm}s`);
 }
-setBeatCss(ENGINE_BPM);
+// Placeholder pulse before the engine builds; gets corrected when
+// buildAudio / reseed produces an engine and reports its derived BPM.
+setBeatCss(74);
 seedInput.value = currentSeed.toString();
 
 // ── state ─────────────────────────────────────────────────────────
@@ -47,8 +48,8 @@ const uiState = { rain: false, vinyl: true };
 
 // ── audio init ────────────────────────────────────────────────────
 function buildEngine(seedValue: bigint): EmberEngine {
+  // BPM omitted → engine derives it from the seed.
   return new EmberEngine(Seed.from(seedValue), {
-    bpm: ENGINE_BPM,
     density: 0.05 + (Number($<HTMLInputElement>('den').value) / 100) * 0.33,
     vinylEnabled: uiState.vinyl,
     speedMultiplier: Number($<HTMLInputElement>('speed').value) / 100,
@@ -61,6 +62,7 @@ function buildAudio(seedValue: bigint): { adapter: ToneAudioAdapter; engine: Emb
 
   const e = buildEngine(seedValue);
   a.setEngine(e);
+  setBeatCss(e.getOptions().bpm);
 
   // Apply current UI slider values to the chain on init
   a.setParam('master.volume', volToDb(Number($<HTMLInputElement>('vol').value) / 100));
@@ -71,13 +73,14 @@ function buildAudio(seedValue: bigint): { adapter: ToneAudioAdapter; engine: Emb
 }
 
 /** Swap a freshly-built engine into the running adapter. Brief fade for
- * clean handoff if currently playing; otherwise just swap. Shared by
- * reseed and BPM-change since both have the same lifecycle. */
+ * clean handoff if currently playing; otherwise just swap. Used by
+ * reseed (the only remaining lifecycle that swaps engines). */
 async function swapEngine(next: EmberEngine): Promise<void> {
   if (!initialised || !adapter) {
     engine = next;
     return;
   }
+  setBeatCss(next.getOptions().bpm);
   if (playing) {
     adapter.stop();
     await new Promise((r) => setTimeout(r, 30));

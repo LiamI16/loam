@@ -159,9 +159,23 @@ determinism are byte-identical at `mult=1.0`.
 - [x] **BPM slider removed.** Functionally redundant with the speed
       multiplier (this engine fully synthesizes notes; BPM changes
       and speed scaling produce identical observable output). Engine
-      BPM is now a hidden constant (`ENGINE_BPM = 74`) — will become
-      seed-derived in a future small task so each seed has its own
-      home tempo. User-facing tempo control is the speed slider only.
+      BPM is now seed-derived (see follow-up below). User-facing
+      tempo control is the speed slider only.
+- [x] **Per-seed BPM derivation** (follow-up landed alongside Stage
+      7c.2). `EmberEngine` constructor derives BPM from
+      `seed.child('bpm-config').rng().nextInt(60, 90)` when
+      `options.bpm` is omitted. Explicit overrides still win (tests
+      pin BPM for locked-sequence stability; engine fingerprint test
+      uses `bpm: 74`). Web demo drops the `ENGINE_BPM` constant,
+      reads `engine.getOptions().bpm` after build to drive the CSS
+      pulse. Each seed now has its own home tempo in [60, 90] BPM
+      (60 = very slow / almost ambient; 90 = moderately upbeat lofi).
+      **Stable for the session** — design fork decided against BPM
+      drift (high architectural cost from distributed-time problem
+      across schedulers, conflict with the user-controls-tempo
+      mental model, and tempo is cognitively much more salient than
+      other parameters so drift threshold is narrow). Seed identity
+      includes tempo as a fixed feature.
 
 **Tests:** 64 (up from 60). All green.
 - `speedMultiplier=1.0` byte-identical to default.
