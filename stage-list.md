@@ -44,6 +44,7 @@ Compact summary — full implementation notes in the linked docs.
 |---|---|---|
 | Drum rewrite | Per-bar variation + per-voice micro-timing + velocity accents + mild 16th-swing | See below |
 | Bass scheduler | Separate bass voice, sparse root-on-beat-1 + maybe-fifth-on-beat-3 pattern | See below |
+| Stereo + per-instrument reverb | Send/return mixer; per-instrument pan + reverb send level | See below |
 
 **Drum rewrite details:** `drum-scheduler.ts` rewritten. Per-voice
 constant micro-timing (snare drag +15 ms, hat slight ahead −3 ms,
@@ -109,38 +110,13 @@ sorted after the pad notes; falls outside the first-6 lock window).
 
 ## Next up
 
-### Stereo + per-instrument reverb (audio chain mixing)
-
-Cheap, transformative. Current chain is mono and routes everything
-through one global reverb — flat. Real lofi takes advantage of stereo
-panning (Rhodes slightly left, melody right, drums center, pad wide)
-and differential reverb wetness per element (kick dry, snare medium,
-melody wet, pad drenched). Both changes are small adapter-side edits
-with outsized perceptual return.
-
-**Bundle (all touch `chains/lofi.ts` chain restructure):**
-- Stereo panners per instrument (Rhodes, melody, drums, pad, bass).
-- Per-instrument reverb sends instead of one bus reverb.
-- Possibly: separate hat / kick / snare pans for stereo drum width.
-
-**Why now (not first):** the gain is biggest after drums + bass are
-in their final form — pan + reverb decisions depend on knowing the
-final instrument set.
-
-**Files:** `chains/lofi.ts`.
-
----
-
-## Backlog (ordered by listening impact)
-
 ### Chord comping + voicing variety
 
-**Promoted to next-after-stereo (2026-06-17):** user listening pass
-flagged "background chord rings in your ear" during silences. The
-direct fix is replacing the one-long-sustain chord-cycle model with
-rhythmic comping. Bundles with the previously-planned voicing
-variety since both rewrite the same emission logic in
-`chord-scheduler.ts`.
+Promoted after stereo (2026-06-17 listening pass): user flagged
+"background chord rings in your ear" during silences. Direct fix is
+replacing the one-long-sustain chord-cycle model with rhythmic
+comping. Bundles with the previously-planned voicing variety since
+both rewrite the same emission logic in `chord-scheduler.ts`.
 
 **Bundle (all touch `chord-scheduler.ts` + `harmony/voicing.ts`):**
 
@@ -181,6 +157,25 @@ that breaks scheduler independence. Discussed and ruled out
 `harmony/chords.ts`, `harmony/markov.ts`, voicing tests, chord tests.
 
 ---
+
+## Recently done — stereo + per-instrument reverb
+
+**Stereo + per-instrument reverb details:** `chains/lofi.ts`
+restructured as a send/return mixer. One shared `Tone.Reverb` (wet=1,
+decay 7, preDelay 0.02) sits on the return; each instrument has its
+own `Tone.Panner` (dry path → warmth) and its own `Tone.Gain` send
+into the reverb input. Replaces the old in-line `keys → chorus →
+evoFilter → reverb → warmth` chain. Per-instrument pan + send levels:
+keys −0.15 / 0.45, pad StereoWidener 0.8 / 0.6, bass 0 / dry, kick
+0 / dry, snare +0.15 / 0.3, hat +0.4 / 0.08, brown bed
+StereoWidener 0.9 / dry, rain unchanged (already stereo), crackle
+center / dry. Chorus + evoFilter remain in line on the keys path
+only (pad goes wide via the widener instead). `fx.evoFilter.cutoff`,
+`fx.chorus.depth`, `fx.drumBus.cutoff` param targets all preserved.
+
+---
+
+## Backlog (ordered by listening impact)
 
 ### Chord echo / delay send (small post-comping tune-up)
 

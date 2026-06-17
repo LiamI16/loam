@@ -3,44 +3,46 @@ import * as Tone from 'tone';
 import type { ToneAudioAdapter } from '../adapter.js';
 
 /**
- * Builds the v1 lo-fi signal chain — a near-verbatim port of
- * `ember-generative-study.html`. Registers channels and parameter targets
- * with the adapter; consumers don't need to know what's inside.
+ * Builds the v1 lo-fi signal chain. Registers channels and parameter
+ * targets with the adapter; consumers don't need to know what's inside.
  *
- * Connections (left to right, sound flows left → right):
- *
- *   keys (FM Rhodes) ─┐
- *   pad  (AM)         ├─► chorus ─► evoFilter ─► reverb ─► warmth ─► master
- *   drum bus ────────────────────────────────────► (lowpass 4200) ─►┘
- *   brown bed ─────────────────────────────────────────────────────►┘
- *   rain bandpass ────────────────────────────────────────────────► (level 0)
- *   vinyl crackle ────────────────────────────────────────────────►┘
+ * Send/return mixer architecture: each instrument has its own panner and
+ * its own send-level into one shared reverb bus. Dry path goes through
+ * `warmth → master`; wet path goes through `reverb → warmth → master`.
+ * Per-instrument pan + send levels are tuned per the table in
+ * `stage-list.md`.
  *
  * Exposed parameter targets (UI sliders / engine `ParamEvent`s):
  *   - `master.warmth`    — warmth filter cutoff (Hz)
  *   - `master.volume`    — adapter master gain (linear)
  *   - `bed.rain.level`   — rain bed volume (dB)
+ *   - `fx.evoFilter.cutoff`, `fx.chorus.depth`, `fx.drumBus.cutoff`
  */
 export function buildLofiChain(adapter: ToneAudioAdapter): void {
-  // ── master & glue ────────────────────────────────────────────────
+  // ── master & shared reverb return ───────────────────────────────
   const warmth = new Tone.Filter({
     type: 'lowpass',
     frequency: warmHz(0.55),
     rolloff: -12,
   }).connect(adapter.master);
-  const reverb = new Tone.Reverb({ decay: 7, preDelay: 0.02, wet: 0.34 }).connect(warmth);
-  // Evo filter — its frequency is now driven by `ParamEvent`s from the
-  // engine (Stage 5 fBm dynamics). The static `Tone.LFO` the prototype
-  // used has been removed; the engine emits ramped cutoff updates ~4 Hz
-  // instead, giving fractal motion rather than an obvious sine sweep.
-  const evoFilter = new Tone.Filter({ type: 'lowpass', frequency: 1800, rolloff: -24 }).connect(
-    reverb,
-  );
-  const chorus = new Tone.Chorus({ frequency: 0.4, delayTime: 3.5, depth: 0.3, wet: 0.35 })
-    .start()
-    .connect(evoFilter);
+  // Shared reverb bus. wet=1 because reverb is now a send/return:
+  // dry signal travels its own path; each instrument's `*Send` gain
+  // controls how much of it is fed to the reverb input. The reverb
+  // output is 100% wet and gets summed back into warmth.
+  const reverb = new Tone.Reverb({ decay: 7, preDelay: 0.02, wet: 1 }).connect(warmth);
 
   // ── keys (chord voicings + sparse melody) ────────────────────────
+  // Keys keep the chorus + evoFilter coloring from the prototype.
+  // Evo filter frequency is driven by engine `ParamEvent`s (Stage 5).
+  const evoFilter = new Tone.Filter({ type: 'lowpass', frequency: 1800, rolloff: -24 });
+  const chorus = new Tone.Chorus({ frequency: 0.4, delayTime: 3.5, depth: 0.3, wet: 0.35 }).start();
+  const keysPan = new Tone.Panner(-0.15);
+  const keysSend = new Tone.Gain(0.45);
+  chorus.connect(evoFilter);
+  evoFilter.connect(keysPan);
+  keysPan.connect(warmth);
+  keysPan.connect(keysSend);
+  keysSend.connect(reverb);
   const keys = new Tone.PolySynth(Tone.FMSynth, {
     harmonicity: 3,
     modulationIndex: 7,
@@ -52,44 +54,66 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
   }).connect(chorus);
 
   // ── soft pad (the "blanket") ─────────────────────────────────────
+  // Pad goes wide via StereoWidener and is the wettest element.
+  const padWidener = new Tone.StereoWidener(0.8);
+  const padSend = new Tone.Gain(0.6);
+  padWidener.connect(warmth);
+  padWidener.connect(padSend);
+  padSend.connect(reverb);
   const pad = new Tone.PolySynth(Tone.AMSynth, {
     harmonicity: 2,
     oscillator: { type: 'triangle' },
     envelope: { attack: 1.4, decay: 0.6, sustain: 0.8, release: 4 },
     volume: -20,
-  }).connect(chorus);
+  }).connect(padWidener);
 
   // ── bass voice (separate from pad's low end) ─────────────────────
   // Sine bass with quick attack, low sustain, fast release — keeps the
   // bass tight and percussive, avoiding sympathetic resonance from
-  // sustained low-end content (the "phone on table" effect). Routes
-  // straight to warmth (skipping chorus / evo / reverb) so it stays
-  // dry and punchy — that's the lofi bass aesthetic (think MF Doom's
-  // basslines, not a synth pad). Gentle lowpass tames any harmonics
-  // that creep above the fundamental.
-  const bassFilter = new Tone.Filter({ type: 'lowpass', frequency: 800 }).connect(warmth);
+  // sustained low-end content (the "phone on table" effect). Stays
+  // center-panned and fully dry (no reverb send) — that's the lofi
+  // bass aesthetic (think MF Doom's basslines, not a synth pad).
+  const bassPan = new Tone.Panner(0).connect(warmth);
+  const bassFilter = new Tone.Filter({ type: 'lowpass', frequency: 800 }).connect(bassPan);
   const bass = new Tone.Synth({
     oscillator: { type: 'sine' },
     envelope: { attack: 0.005, decay: 0.3, sustain: 0.4, release: 0.28 },
     volume: -15,
   }).connect(bassFilter);
 
-  // ── drums: soft, muffled, mostly dry ─────────────────────────────
+  // ── drums: per-voice pan + per-voice reverb send ─────────────────
+  // Shared drumBus lowpass preserves the listen-distance cutoff drift
+  // (Stage 7b). Each voice pans individually before the bus so the kit
+  // has stereo width without breaking the shared filter modulation.
   const drumBus = new Tone.Filter({ type: 'lowpass', frequency: 4200, rolloff: -12 }).connect(
     warmth,
   );
+  // Kick: center, dry.
+  const kickPan = new Tone.Panner(0).connect(drumBus);
   const kick = new Tone.MembraneSynth({
     pitchDecay: 0.05,
     octaves: 4,
     envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 1.4 },
     volume: -9,
-  }).connect(drumBus);
+  }).connect(kickPan);
+  // Snare: slight right, medium reverb send.
+  const snarePan = new Tone.Panner(0.15);
+  const snareSend = new Tone.Gain(0.3);
+  snarePan.connect(drumBus);
+  snarePan.connect(snareSend);
+  snareSend.connect(reverb);
   const snare = new Tone.NoiseSynth({
     noise: { type: 'pink' },
     envelope: { attack: 0.001, decay: 0.16, sustain: 0 },
     volume: -17,
-  }).connect(drumBus);
-  const hatFx = new Tone.Filter({ type: 'highpass', frequency: 7000 }).connect(drumBus);
+  }).connect(snarePan);
+  // Hat: further right, tiny reverb send (just to glue it into the space).
+  const hatPan = new Tone.Panner(0.4);
+  const hatSend = new Tone.Gain(0.08);
+  hatPan.connect(drumBus);
+  hatPan.connect(hatSend);
+  hatSend.connect(reverb);
+  const hatFx = new Tone.Filter({ type: 'highpass', frequency: 7000 }).connect(hatPan);
   const hat = new Tone.NoiseSynth({
     noise: { type: 'white' },
     envelope: { attack: 0.001, decay: 0.04, sustain: 0 },
@@ -102,11 +126,14 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
   // prototype) "warmth = dark" silently attenuates rain/crackle too, which
   // reads as a UX bug.
 
-  // Always-on brown noise blanket
+  // Always-on brown noise blanket — widened to fill the stereo field
+  // (mono brown noise dead-center would feel narrower than the rest of
+  // the kit now that everything else pans).
   const brownBed = new Tone.Noise('brown').start();
   const brownBedFilter = new Tone.Filter({ type: 'lowpass', frequency: 480 });
+  const brownBedWidener = new Tone.StereoWidener(0.9);
   const brownBedVol = new Tone.Volume(-30);
-  brownBed.chain(brownBedFilter, brownBedVol, adapter.master);
+  brownBed.chain(brownBedFilter, brownBedWidener, brownBedVol, adapter.master);
 
   // Toggleable rain (starts silent). Two parallel bandpasses on pink noise:
   // a low/mid "wash" (~1.8 kHz, broad) and a high "sparkle" (~4.5 kHz,
