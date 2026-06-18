@@ -211,6 +211,12 @@ reset is a v2 break for any saved seed. Recorded:
   `hat / pad×2 / rhodes×3` — seed 42's first archetype roll is
   quartal, producing a 3-voice (D-G-C) opening voicing rather than
   the previous 4-voice close (C-E-G-A).
+- 2026-06-17 (chord echo): adapter-side `Tone.FeedbackDelay` on the
+  keys path, output routed into the shared reverb bus. Engine emits
+  a one-shot `fx.chordEcho.time` ParamEvent at t=0 = `60 / bpm`
+  seconds (quarter note locked to seed BPM). Fingerprint count
+  113; first slot's last rhodes voice rotates out of the 6-element
+  slice as the new ParamEvent takes its place.
 
 ### 7.3 Derived methods aren't separately contract-locked
 

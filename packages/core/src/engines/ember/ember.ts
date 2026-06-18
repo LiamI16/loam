@@ -221,6 +221,7 @@ export class EmberEngine implements Engine {
     // which BassScheduler reads.
     const chordEvents = this.chords.scheduleUntil(engineFrom, engineUntil);
     const raw: EngineEvent[] = [
+      ...this.emitSetupParams(engineFrom),
       ...chordEvents,
       ...this.bass.scheduleUntil(engineFrom, engineUntil),
       ...this.drums.scheduleUntil(engineFrom, engineUntil),
@@ -298,6 +299,22 @@ export class EmberEngine implements Engine {
       vinylEnabled: this.state.vinylEnabled,
       speedMultiplier: this.speedMultiplier,
     };
+  }
+
+  /** One-shot ParamEvents at t=0. BPM-derived chord-echo delay time
+   * goes here so the adapter doesn't need to know the engine's BPM
+   * directly. Re-emitted after `reset()` because engineCursor returns
+   * to 0. */
+  private emitSetupParams(from: number): ParamEvent[] {
+    if (from !== 0) return [];
+    return [
+      {
+        kind: 'param',
+        target: 'fx.chordEcho.time',
+        value: 60 / this.state.bpm,
+        time: 0,
+      },
+    ];
   }
 
   private emitTicks(from: number, to: number): TickEvent[] {

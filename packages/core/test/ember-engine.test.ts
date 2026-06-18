@@ -189,15 +189,19 @@ describe('EmberEngine', () => {
     // on quartal, producing a 3-voice (D-G-C) voicing instead of the
     // previous 4-voice close (C-E-G-A). Count drops by 4 across the
     // 5 s window (3 voices instead of 4 on hits within the first slot).
+    // Chord-echo (same day): adds a one-shot `fx.chordEcho.time`
+    // ParamEvent at t=0 (BPM-derived delay time for the adapter).
+    // Count: 112 + 1 = 113; the param slots in after the hat at
+    // t=-0.003 and pushes the last rhodes out of the 6-slot slice.
     expect({ count: events.length, fingerprint }).toEqual({
-      count: 112,
+      count: 113,
       fingerprint: [
         'n:hat:42:-0.0030',
+        'p:fx.chordEcho.time',
         'n:pad:45:0.0000',
         'n:pad:52:0.0000',
         'n:rhodes:60:0.0000',
         'n:rhodes:62:0.0000',
-        'n:rhodes:67:0.0000',
       ],
     });
   });

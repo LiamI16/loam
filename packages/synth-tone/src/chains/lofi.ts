@@ -38,8 +38,27 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
   const chorus = new Tone.Chorus({ frequency: 0.4, delayTime: 3.5, depth: 0.3, wet: 0.35 }).start();
   const keysPan = new Tone.Panner(-0.15);
   const keysSend = new Tone.Gain(0.45);
+  // Chord-echo send: feedback delay tapping post-evoFilter so echoes
+  // carry the same colour as the dry signal. Output feeds into the
+  // shared reverb bus — echoes share the room with the dry hit (the
+  // standard dub / lofi convention). Delay time is BPM-locked via a
+  // one-shot `fx.chordEcho.time` ParamEvent the engine emits at t=0
+  // (`60 / bpm` seconds = one quarter note). 30% feedback gives ~3
+  // audible repeats before the tail fades; 0.18 send gain keeps the
+  // echo gentle (clearly heard but not dominating). Both chord and
+  // melody hits get the tail because they share the keys synth —
+  // that's lofi-correct (melody echoes are a genre staple) and
+  // avoids splitting the synth before counter-melody lands.
+  const chordEcho = new Tone.FeedbackDelay({
+    delayTime: 60 / 74, // placeholder; engine overrides with BPM-correct value
+    feedback: 0.3,
+    wet: 1,
+  }).connect(reverb);
+  const chordEchoSend = new Tone.Gain(0.20);
+  chordEchoSend.connect(chordEcho);
   chorus.connect(evoFilter);
   evoFilter.connect(keysPan);
+  evoFilter.connect(chordEchoSend);
   keysPan.connect(warmth);
   keysPan.connect(keysSend);
   keysSend.connect(reverb);
@@ -289,6 +308,32 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
     },
     ramp: (v, t) => {
       drumBus.frequency.rampTo(v, t);
+    },
+  });
+  // Chord echo: time is BPM-locked (engine emits one-shot at t=0);
+  // feedback and wet are exposed for future fBm drift.
+  adapter.registerParam('fx.chordEcho.time', {
+    set: (v) => {
+      chordEcho.delayTime.value = v;
+    },
+    ramp: (v, t) => {
+      chordEcho.delayTime.rampTo(v, t);
+    },
+  });
+  adapter.registerParam('fx.chordEcho.feedback', {
+    set: (v) => {
+      chordEcho.feedback.value = v;
+    },
+    ramp: (v, t) => {
+      chordEcho.feedback.rampTo(v, t);
+    },
+  });
+  adapter.registerParam('fx.chordEcho.wet', {
+    set: (v) => {
+      chordEchoSend.gain.value = v;
+    },
+    ramp: (v, t) => {
+      chordEchoSend.gain.rampTo(v, t);
     },
   });
 }

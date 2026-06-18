@@ -47,6 +47,7 @@ Compact summary — full implementation notes in the linked docs.
 | Stereo + per-instrument reverb | Send/return mixer; per-instrument pan + reverb send level | See below |
 | Chord comping (A: rhythm) | Bar-grid scheduler; {2,4}-bar slots; beat-1 anchor + density-driven hits + pickup + rare off-beat sync. Folded "B-lite": keys release 2.6 → 0.5 s. | See below |
 | Chord comping (C: voicing variety) | Four archetypes (close/spread/rootless/quartal), Dirichlet-perturbed per seed; drop-a-voice micro-variation; rootless-preview pickups | See below |
+| Chord echo / delay send | `Tone.FeedbackDelay` on keys path, quarter-note BPM-locked, 30% feedback, 0.18 send, echo→reverb (shared room) | See below |
 
 **Drum rewrite details:** `drum-scheduler.ts` rewritten. Per-voice
 constant micro-timing (snare drag +15 ms, hat slight ahead −3 ms,
@@ -139,6 +140,26 @@ categorical archetypes.
 **Files:** `chord-scheduler.ts`, `harmony/chords.ts`,
 `harmony/markov.ts`, `harmony/voicing.ts` (chromatic-approach
 hook), tests.
+
+---
+
+## Recently done — chord echo / delay send
+
+`Tone.FeedbackDelay` added to the keys path in `chains/lofi.ts`
+(2026-06-17). Tapped post-evoFilter so echoes carry the same colour
+as the dry signal; output routed into the shared reverb bus
+(echoes share the room — standard dub / lofi convention). Both
+chord and melody hits get the tail because they share the keys
+synth (melody timbre-split belongs in the counter-melody stage).
+
+Settings: feedback 0.30, send gain 0.18 (mid wet). Delay time is
+BPM-locked — the engine emits a one-shot `fx.chordEcho.time`
+ParamEvent at `t=0` with value `60 / bpm` seconds (one quarter
+note). Three params exposed for future fBm drift:
+`fx.chordEcho.time`, `fx.chordEcho.feedback`, `fx.chordEcho.wet`.
+
+Engine fingerprint count 112 → 113 (one new ParamEvent at t=0;
+last rhodes voice rotates out of the 6-element fingerprint slice).
 
 ---
 
@@ -277,22 +298,6 @@ Discussed 2026-06-17 during chord-comping listen pass — see
 
 **Files:** `chains/lofi.ts`, `ember.ts` (per-seed draw + param
 emit), new `chord.volume` adapter param.
-
----
-
-### Chord echo / delay send (small post-comping tune-up)
-
-Tiny stage. Adds a feedback-delay node on the rhodes path with a
-quarter-note tap and ~30% feedback. Each chord-comping hit gets a
-gentle rhythmic echo tail — makes one hit feel like several, dub /
-lofi tradition. Complementary to comping: the silence between
-comping hits gets *filled* by the echo of the previous hit.
-
-Expose `fx.chordEcho.feedback` / `fx.chordEcho.wet` as
-`ParamSetter`s so future fBm drift can modulate.
-
-**Files:** `chains/lofi.ts` (one `Tone.FeedbackDelay` node + a
-send on the keys synth + two new `registerParam` calls).
 
 ---
 
