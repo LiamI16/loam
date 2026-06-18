@@ -48,6 +48,8 @@ Compact summary — full implementation notes in the linked docs.
 | Chord comping (A: rhythm) | Bar-grid scheduler; {2,4}-bar slots; beat-1 anchor + density-driven hits + pickup + rare off-beat sync. Folded "B-lite": keys release 2.6 → 0.5 s. | See below |
 | Chord comping (C: voicing variety) | Four archetypes (close/spread/rootless/quartal), Dirichlet-perturbed per seed; drop-a-voice micro-variation; rootless-preview pickups | See below |
 | Chord echo / delay send | `Tone.FeedbackDelay` on keys path, quarter-note BPM-locked, 30% feedback, 0.18 send, echo→reverb (shared room) | See below |
+| Chord pattern menu (rework) | Per-slot 5-pattern Dirichlet selection (pure-hold / hold-with-refresh / call-response / light-comping / active-comping); activity-stream tilt; drops density + sync | See below |
+| render-snippet dev tool | LLM-readable event-log dump for offline analysis (fight ear fatigue) | See below |
 
 **Drum rewrite details:** `drum-scheduler.ts` rewritten. Per-voice
 constant micro-timing (snare drag +15 ms, hat slight ahead −3 ms,
@@ -140,6 +142,78 @@ categorical archetypes.
 **Files:** `chord-scheduler.ts`, `harmony/chords.ts`,
 `harmony/markov.ts`, `harmony/voicing.ts` (chromatic-approach
 hook), tests.
+
+---
+
+## Recently done — render-snippet dev tool
+
+`packages/core/scripts/render-snippet.ts` — runs the engine offline
+for N seconds and dumps an LLM-readable text timeline (channel-aware,
+bar-grouped, slot-annotated). Built specifically to combat ear
+fatigue in tuning loops: instead of A/B'ing variants by listening
+(which collapses over time), render a snippet, paste to chat, let an
+LLM analyze for symptoms the listener can no longer reliably hear.
+
+Usage:
+```
+pnpm --filter @loam/core build
+node --experimental-strip-types packages/core/scripts/render-snippet.ts \
+  --seeds 12017834852233104861,6476679919478941024,5750331000525312698 \
+  --seconds 14
+```
+
+Not built or distributed; developer-only utility. The choppiness
+diagnosis that triggered the chord pattern menu came directly from
+running this on three user-provided seeds — see
+`docs/seed-identity.md` and the chord-pattern-menu notes below.
+
+---
+
+## Recently done — chord comping pattern menu (rework)
+
+Replaces the per-beat probability model with a per-slot pattern
+menu. Decisions ironed out via discussion + snippet-driven
+diagnosis (2026-06-17):
+
+- **Diagnosis.** Render-snippet analysis on the user's three seeds
+  showed beat-3 chord hits effectively never firing across 16
+  seconds of three different seeds. With density mean 0.35,
+  5-bar runs of beat-1-only happen ~11% of the time and produce
+  perceived "the chord layer isn't carrying the harmony."
+- **Reframing.** Calm lofi convention (Lofi Girl / chillhop / j'san
+  reference) leans heavily on *sustained holds* with occasional soft
+  re-articulation; rhythmic comping is a valid but rare mode
+  (Nujabes / J Dilla flavour). The previous model was Nujabes-style
+  by default; we wanted calm-sustained by default.
+- **Pattern menu** (in `harmony/comping-patterns.ts`): pure-hold,
+  hold-with-refresh, call-response, light-comping, active-comping.
+  Base weights `[0.40, 0.30, 0.15, 0.10, 0.05]` Dirichlet-perturbed
+  per seed at α=20. Activity-stream tilt (soft Boltzmann at K=3)
+  shifts pattern selection toward calm in low-activity stretches
+  and active in high. None categorical.
+- **`HitSpec` declarative model.** Patterns return per-bar plans of
+  `{beatOffset, velocity, thinness, durationBeats}`. Scheduler is
+  a pure interpreter — knows nothing about probabilities.
+- **`density` stream renamed to `activity`** (seed children
+  `chord-activity-fbm/-config`). Single-responsibility input to
+  `selectPattern`. Density-as-concept removed from the chord layer
+  entirely.
+- **Sync dropped.** Per-seed Beta off-beat substitution was a
+  Phase-A artifact; pattern menu covers the design intent more
+  cleanly. `chord-sync-config/-`, `sampleBeta` helper removed.
+- **Voicing-thinness helper** (`applyThinness` in `voicing.ts`) maps
+  `'full' | 'rootless' | 'top-voices'` onto pitch arrays without
+  recomputing voicings.
+- **Inter-instrument call-and-response** (chord layer holds, melody
+  fills gaps) noted as future work — properly belongs in melody
+  rewrite + arrangement-controller stages.
+
+Engine fingerprint count stays at 113 (first 6 events at t=0 are
+unchanged because seed 42's first pattern still emits beat 1 with
+the same archetype voicing).
+
+First exercise of seed-identity §3 (couplings — activity stream
+biases pattern weights without becoming a fixed knob).
 
 ---
 

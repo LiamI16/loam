@@ -282,3 +282,23 @@ export function rootlessVoicing(voicing: readonly number[]): number[] {
   if (voicing.length <= 1) return voicing.slice();
   return voicing.slice(1);
 }
+
+/**
+ * Apply a `VoicingThinness` to a voicing. Maps the declarative spec
+ * from `comping-patterns.ts` onto pitch arrays:
+ *   - `full`       → unchanged
+ *   - `rootless`   → drops the bottom voice
+ *   - `top-voices` → keeps only the highest 2 (3 if the voicing has 5+)
+ *
+ * Used by the chord scheduler to interpret per-hit thinness without
+ * recomputing voicings. Always returns a sorted ascending array.
+ */
+export function applyThinness(
+  voicing: readonly number[],
+  thinness: 'full' | 'rootless' | 'top-voices',
+): number[] {
+  if (thinness === 'full') return voicing.slice();
+  if (thinness === 'rootless') return rootlessVoicing(voicing);
+  const keep = voicing.length >= 5 ? 3 : 2;
+  return voicing.slice(Math.max(0, voicing.length - keep));
+}

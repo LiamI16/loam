@@ -69,10 +69,12 @@ describe('EmberEngine', () => {
     // weaker but still meaningful invariant: mean=0 produces far fewer
     // melody notes than mean=1 over the same window.
     //
-    // Counting note: chord-comping (post bar-grid rewrite) emits
-    // voicings of ≥3 simultaneous Rhodes notes; the melody scheduler
-    // emits a single Rhodes note at a time. Counting Rhodes timestamps
-    // with ≤2 voices at them isolates melody.
+    // Counting note: the chord scheduler's pattern menu emits hits at
+    // various thinness levels (full / rootless / top-voices). Soft
+    // "top-voices" taps produce 2-voice rhodes events that look like
+    // melody to a `voices ≤ 2` filter. The reliable melody-only
+    // signal is *strictly* solo rhodes events — count timestamps with
+    // exactly one rhodes note.
     const melodyCount = (mean: number) => {
       const e = new EmberEngine(Seed.from(42n), { density: mean });
       const events = e.scheduleUntil(60);
@@ -80,11 +82,10 @@ describe('EmberEngine', () => {
       for (const ev of events) {
         if (ev.kind !== 'note') continue;
         if ((ev as { channel: string }).channel !== 'rhodes') continue;
-        const t = ev.time;
-        rhodesByTime.set(t, (rhodesByTime.get(t) ?? 0) + 1);
+        rhodesByTime.set(ev.time, (rhodesByTime.get(ev.time) ?? 0) + 1);
       }
       let count = 0;
-      for (const n of rhodesByTime.values()) if (n <= 2) count += n;
+      for (const n of rhodesByTime.values()) if (n === 1) count += 1;
       return count;
     };
     const high = melodyCount(1.0);

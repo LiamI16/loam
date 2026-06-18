@@ -217,6 +217,21 @@ reset is a v2 break for any saved seed. Recorded:
   seconds (quarter note locked to seed BPM). Fingerprint count
   113; first slot's last rhodes voice rotates out of the 6-element
   slice as the new ParamEvent takes its place.
+- 2026-06-17 (chord comping rework — pattern menu): the chord
+  scheduler's per-beat probability model replaced by a per-slot
+  comping-pattern menu (pure-hold / hold-with-refresh / call-response
+  / light-comping / active-comping) with per-seed Dirichlet weights
+  tilted by a renamed `chord-activity` fBm stream. The previous
+  beat-3 "density" stream is gone — its role split cleanly:
+  pattern selection (activity-stream-tilted Dirichlet) replaces
+  per-beat firing, and "density" no longer exists as a concept.
+  Sync (per-seed Beta-drawn off-beat substitution) dropped — the
+  pattern menu covers the design intent more cleanly. Seed children
+  renamed: `chord-density-fbm/-config` → `chord-activity-fbm/-config`;
+  added `chord-pattern-config`, `chord-pattern`; removed
+  `chord-sync-config`, `chord-sync`. Fingerprint count holds at 113;
+  first 6 events unchanged because seed 42's first pattern still
+  fires beat 1 at t=0 with the same archetype voicing.
 
 ### 7.3 Derived methods aren't separately contract-locked
 

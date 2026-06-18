@@ -6,6 +6,18 @@ export {
   chordPitchClasses,
   type Quality,
 } from './chords.js';
+export {
+  type BarPlan,
+  type HitSpec,
+  type HitVelocity,
+  PATTERN_ACTIVITY,
+  planSlot,
+  selectPattern,
+  SLOT_PATTERN_BASE_WEIGHTS,
+  type SlotPattern,
+  SLOT_PATTERNS,
+  type VoicingThinness,
+} from './comping-patterns.js';
 export { type DirichletOptions, perturbDirichlet, perturbMatrix } from './dirichlet.js';
 export {
   HAND_MATRIX,
@@ -25,6 +37,7 @@ export {
   modesAtPosition,
 } from './modes.js';
 export {
+  applyThinness,
   type Archetype,
   ARCHETYPES,
   DEFAULT_REGISTER,
