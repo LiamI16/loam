@@ -96,7 +96,7 @@ function renderSeed(seedValue: bigint, opts: Options): string {
   const padTimesSorted = [...padTimes].sort((a, b) => a - b);
   const slotAnnotations = padTimesSorted.map((t) => {
     const rhodesAtT = noteEvents
-      .filter((e) => e.channel === 'rhodes' && Math.abs(e.time - t) < 1e-6)
+      .filter((e) => e.channel === 'rhodes_chord' && Math.abs(e.time - t) < 1e-6)
       .map((e) => e.pitch)
       .sort((a, b) => a - b);
     const padAtT = noteEvents
@@ -162,8 +162,10 @@ function renderSeed(seedValue: bigint, opts: Options): string {
       const pitches = evs.map((e) => e.pitch);
       if (ch === 'hat' || ch === 'kick' || ch === 'snare' || ch === 'bell') {
         labels.push(ch.toUpperCase());
-      } else if (ch === 'rhodes') {
-        labels.push(`RHODES:[${pitches.sort((a, b) => a - b).join(',')}]`);
+      } else if (ch === 'rhodes_chord') {
+        labels.push(`CHORD:[${pitches.sort((a, b) => a - b).join(',')}]`);
+      } else if (ch === 'rhodes_melody') {
+        labels.push(`MEL:[${pitches.sort((a, b) => a - b).join(',')}]`);
       } else if (ch === 'pad') {
         labels.push(`PAD:[${pitches.sort((a, b) => a - b).join(',')}]`);
       } else if (ch === 'bass') {

@@ -68,14 +68,29 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
   // is the middle ground — hits decay smoothly without piling up
   // into the next bar's beat 1 at lofi tempos (74 BPM bar ≈ 3.25 s,
   // so a 0.8 s release leaves > 2 s of clear space).
-  const keys = new Tone.PolySynth(Tone.FMSynth, {
+  //
+  // Chord + melody share the same FM Rhodes patch but are split into
+  // two PolySynths so the mix can sit melody forward (-9 dB) and
+  // chord behind (-13 dB) — a 4 dB gap that reads as "melody leads,
+  // chord supports" without forcing extreme separation. Both feed the
+  // same chorus → evoFilter → pan → reverb-send path so the colour
+  // stays consistent. A future "Timbre swaps + counter-melody" stage
+  // is where the melody patch may diverge from the chord patch.
+  const keysSharedPatch = {
     harmonicity: 3,
     modulationIndex: 7,
-    oscillator: { type: 'sine' },
+    oscillator: { type: 'sine' as const },
     envelope: { attack: 0.03, decay: 0.7, sustain: 0.28, release: 0.8 },
-    modulation: { type: 'triangle' },
+    modulation: { type: 'triangle' as const },
     modulationEnvelope: { attack: 0.02, decay: 0.4, sustain: 0.1, release: 0.6 },
-    volume: -11,
+  };
+  const keysChord = new Tone.PolySynth(Tone.FMSynth, {
+    ...keysSharedPatch,
+    volume: -13,
+  }).connect(chorus);
+  const keysMelody = new Tone.PolySynth(Tone.FMSynth, {
+    ...keysSharedPatch,
+    volume: -9,
   }).connect(chorus);
 
   // ── soft pad (the "blanket") ─────────────────────────────────────
@@ -130,7 +145,7 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
   const snare = new Tone.NoiseSynth({
     noise: { type: 'pink' },
     envelope: { attack: 0.001, decay: 0.16, sustain: 0 },
-    volume: -17,
+    volume: -20,
   }).connect(snarePan);
   // Hat: further right, tiny reverb send (just to glue it into the space).
   const hatPan = new Tone.Panner(0.4);
@@ -189,12 +204,19 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
   }).connect(crackleFilter);
 
   // ── register channels (engine-emitted note dispatch) ─────────────
-  adapter.registerChannel(Channels.RHODES, {
+  adapter.registerChannel(Channels.RHODES_CHORD, {
     trigger: (event, audioTime) => {
       const freq = Tone.Frequency(event.pitch, 'midi').toFrequency();
-      keys.triggerAttackRelease(freq, event.durationMs / 1000, audioTime, event.velocity);
+      keysChord.triggerAttackRelease(freq, event.durationMs / 1000, audioTime, event.velocity);
     },
-    releaseAll: () => keys.releaseAll(),
+    releaseAll: () => keysChord.releaseAll(),
+  });
+  adapter.registerChannel(Channels.RHODES_MELODY, {
+    trigger: (event, audioTime) => {
+      const freq = Tone.Frequency(event.pitch, 'midi').toFrequency();
+      keysMelody.triggerAttackRelease(freq, event.durationMs / 1000, audioTime, event.velocity);
+    },
+    releaseAll: () => keysMelody.releaseAll(),
   });
 
   adapter.registerChannel(Channels.PAD, {

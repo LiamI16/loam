@@ -50,6 +50,7 @@ Compact summary — full implementation notes in the linked docs.
 | Chord echo / delay send | `Tone.FeedbackDelay` on keys path, quarter-note BPM-locked, 30% feedback, 0.18 send, echo→reverb (shared room) | See below |
 | Chord pattern menu (rework) | Per-slot 5-pattern Dirichlet selection (pure-hold / hold-with-refresh / call-response / light-comping / active-comping); activity-stream tilt; drops density + sync | See below |
 | render-snippet dev tool | LLM-readable event-log dump for offline analysis (fight ear fatigue) | See below |
+| Chord / melody channel split | `RHODES_CHORD` + `RHODES_MELODY` channels with separate synths; chord −13 dB, melody −9 dB; snare drop to −20 dB | See below |
 
 **Drum rewrite details:** `drum-scheduler.ts` rewritten. Per-voice
 constant micro-timing (snare drag +15 ms, hat slight ahead −3 ms,
@@ -142,6 +143,29 @@ categorical archetypes.
 **Files:** `chord-scheduler.ts`, `harmony/chords.ts`,
 `harmony/markov.ts`, `harmony/voicing.ts` (chromatic-approach
 hook), tests.
+
+---
+
+## Recently done — chord / melody channel split (melody-rewrite prep)
+
+Splits the shared Rhodes channel into `Channels.RHODES_CHORD` and
+`Channels.RHODES_MELODY`. The adapter now hosts **two FMSynths
+sharing the same Rhodes patch** (chord at −13 dB, melody at −9 dB)
+both routing through the same chorus → evoFilter → pan → reverb-send
+path. The 4 dB gap reads as "melody leads, chord supports" without
+forcing extreme separation. Snare dropped −17 → −20 dB at the same
+time (drum bus rebalance — chord cut left snare too prominent).
+
+Why now (before melody work): motif / sustain / arpeggio tuning
+needs the right chord-vs-melody balance to target on the first
+pass. Tuning against a buried melody and retuning later was the
+wasted-work path. This is the "Option B" mid-ground per the
+discussion: volume separation now; full timbre split deferred to
+the counter-melody stage where a second Rhodes-different patch is
+already planned.
+
+Engine fingerprint count stays 113; first 6 event signatures
+change at the string level (`rhodes` → `rhodes_chord`).
 
 ---
 

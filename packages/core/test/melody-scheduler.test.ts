@@ -10,7 +10,7 @@ describe('MelodyScheduler', () => {
     for (const ev of events) {
       expect(PENT_MIDI).toContain((ev as { pitch: number }).pitch);
       expect(ev.kind).toBe('note');
-      expect((ev as { channel: string }).channel).toBe(Channels.RHODES);
+      expect((ev as { channel: string }).channel).toBe(Channels.RHODES_MELODY);
     }
   });
 

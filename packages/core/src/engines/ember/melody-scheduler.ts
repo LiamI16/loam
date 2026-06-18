@@ -15,7 +15,7 @@ import {
  * fires with probability sampled from the density stream; when it fires,
  * picks a pentatonic note (filtered against the current chord to avoid
  * the worst dissonances), picks 4n or 8n duration 50/50, and emits a
- * soft `note` event on `Channels.RHODES`.
+ * soft `note` event on `Channels.RHODES_MELODY`.
  *
  * Stage 6 — chord-aware filter: when `state.currentChord` is set, blacklist
  * pentatonic notes whose pitch class is a semitone above or below any
@@ -64,7 +64,7 @@ export class MelodyScheduler implements SubScheduler {
         const velocity = 0.22 + this.rng.nextFloat() * 0.12;
         events.push({
           kind: 'note',
-          channel: Channels.RHODES,
+          channel: Channels.RHODES_MELODY,
           pitch,
           velocity,
           durationMs,

@@ -11,7 +11,7 @@ describe('ChordScheduler (comping)', () => {
     const s = new ChordScheduler(Seed.from(1n), { ...OPTS, currentChord: null });
     const events = s.scheduleUntil(0, 1.0);
     const atZero = events.filter((e) => e.time === 0);
-    const rhodes = atZero.filter((e) => e.kind === 'note' && e.channel === Channels.RHODES);
+    const rhodes = atZero.filter((e) => e.kind === 'note' && e.channel === Channels.RHODES_CHORD);
     const pad = atZero.filter((e) => e.kind === 'note' && e.channel === Channels.PAD);
     // First bar of first slot always anchors beat 1 (voicing emitted)
     expect(rhodes.length).toBeGreaterThanOrEqual(3);
@@ -79,7 +79,7 @@ describe('ChordScheduler (comping)', () => {
       const rhodesAtT = events.filter(
         (e) =>
           e.kind === 'note' &&
-          e.channel === Channels.RHODES &&
+          e.channel === Channels.RHODES_CHORD &&
           Math.abs(e.time - t) < 1e-6,
       );
       expect(rhodesAtT.length).toBeGreaterThanOrEqual(3);
@@ -117,7 +117,7 @@ describe('ChordScheduler (comping)', () => {
       const s = new ChordScheduler(Seed.from(BigInt(i)), { ...OPTS, currentChord: null });
       const events = s.scheduleUntil(0, SECONDS_PER_BAR * 8);
       const fp = events
-        .filter((e) => e.kind === 'note' && e.channel === Channels.RHODES)
+        .filter((e) => e.kind === 'note' && e.channel === Channels.RHODES_CHORD)
         .map((e) => `${(e as { pitch: number }).pitch}@${e.time.toFixed(2)}`)
         .join(',');
       fps.add(fp);

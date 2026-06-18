@@ -4,7 +4,11 @@
  * See docs/event-protocol.md §4 and §9.6.
  */
 export const Channels = {
-  RHODES: 'rhodes',
+  /** Chord-comping Rhodes voice. Split from melody so the two can be
+   * mixed independently (chord backseats; melody leads). */
+  RHODES_CHORD: 'rhodes_chord',
+  /** Single-voice melodic Rhodes line. */
+  RHODES_MELODY: 'rhodes_melody',
   PAD: 'pad',
   KICK: 'kick',
   SNARE: 'snare',

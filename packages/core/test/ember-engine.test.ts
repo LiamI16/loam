@@ -21,8 +21,8 @@ describe('EmberEngine', () => {
     const channels = new Set(
       events.filter((ev) => ev.kind === 'note').map((ev) => (ev as { channel: string }).channel),
     );
-    // chords (rhodes), pad, kick, snare, hat should all appear
-    expect(channels.has('rhodes')).toBe(true);
+    // chord + melody split (rhodes_chord, rhodes_melody), pad, kick, snare, hat should all appear
+    expect(channels.has('rhodes_chord')).toBe(true);
     expect(channels.has('pad')).toBe(true);
     expect(channels.has('kick')).toBe(true);
     expect(channels.has('snare')).toBe(true);
@@ -81,11 +81,11 @@ describe('EmberEngine', () => {
       const rhodesByTime = new Map<number, number>();
       for (const ev of events) {
         if (ev.kind !== 'note') continue;
-        if ((ev as { channel: string }).channel !== 'rhodes') continue;
+        if ((ev as { channel: string }).channel !== 'rhodes_melody') continue;
         rhodesByTime.set(ev.time, (rhodesByTime.get(ev.time) ?? 0) + 1);
       }
       let count = 0;
-      for (const n of rhodesByTime.values()) if (n === 1) count += 1;
+      for (const n of rhodesByTime.values()) count += n;
       return count;
     };
     const high = melodyCount(1.0);
@@ -201,8 +201,8 @@ describe('EmberEngine', () => {
         'p:fx.chordEcho.time',
         'n:pad:45:0.0000',
         'n:pad:52:0.0000',
-        'n:rhodes:60:0.0000',
-        'n:rhodes:62:0.0000',
+        'n:rhodes_chord:60:0.0000',
+        'n:rhodes_chord:62:0.0000',
       ],
     });
   });

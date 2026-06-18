@@ -11,7 +11,9 @@ export type EngineEvent = NoteEvent | ParamEvent | TickEvent;
 
 export interface NoteEvent {
   kind: 'note';
-  /** Channel name — e.g. 'rhodes', 'pad', 'kick', 'snare', 'hat', 'bass', 'bell'. */
+  /** Channel name — see `Channels` for the canonical set
+   * ('rhodes_chord', 'rhodes_melody', 'pad', 'kick', 'snare', 'hat',
+   * 'bass', 'bell'). */
   channel: string;
   /** MIDI note number, 0–127. C4 = 60. */
   pitch: number;

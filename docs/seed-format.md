@@ -232,6 +232,13 @@ reset is a v2 break for any saved seed. Recorded:
   `chord-sync-config`, `chord-sync`. Fingerprint count holds at 113;
   first 6 events unchanged because seed 42's first pattern still
   fires beat 1 at t=0 with the same archetype voicing.
+- 2026-06-17 (RHODES channel split): `Channels.RHODES` removed,
+  replaced by `Channels.RHODES_CHORD` and `Channels.RHODES_MELODY`.
+  Chord scheduler emits on the former; melody scheduler on the
+  latter. Lets the adapter mix chord (−13 dB) and melody (−9 dB)
+  independently — preparation for melody rewrite. Fingerprint count
+  stays at 113; first 6 event signatures change `rhodes` →
+  `rhodes_chord` (string-level only).
 
 ### 7.3 Derived methods aren't separately contract-locked
 

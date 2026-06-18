@@ -459,7 +459,7 @@ function emitVoicing(
   for (const pitch of voicing) {
     events.push({
       kind: 'note',
-      channel: Channels.RHODES,
+      channel: Channels.RHODES_CHORD,
       pitch,
       velocity: clamped,
       durationMs,
