@@ -69,27 +69,39 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
   // into the next bar's beat 1 at lofi tempos (74 BPM bar ≈ 3.25 s,
   // so a 0.8 s release leaves > 2 s of clear space).
   //
-  // Chord + melody share the same FM Rhodes patch but are split into
-  // two PolySynths so the mix can sit melody forward (-9 dB) and
-  // chord behind (-13 dB) — a 4 dB gap that reads as "melody leads,
-  // chord supports" without forcing extreme separation. Both feed the
-  // same chorus → evoFilter → pan → reverb-send path so the colour
-  // stays consistent. A future "Timbre swaps + counter-melody" stage
-  // is where the melody patch may diverge from the chord patch.
-  const keysSharedPatch = {
+  // Chord + melody share the same FM Rhodes patch shape but with
+  // different envelope sustain levels: chord sustains at 0.55 so the
+  // pattern menu's pure-hold / hold-with-refresh modes actually ring
+  // audibly during the multi-second sustain phase; melody sustains
+  // at 0.28 to keep single-note phrases percussive and forward.
+  // Both are split into two PolySynths so the mix can sit melody
+  // forward (-9 dB) and chord behind (-13 dB) — a 4 dB gap that
+  // reads as "melody leads, chord supports" without forcing extreme
+  // separation. Both feed the same chorus → evoFilter → pan →
+  // reverb-send path so the colour stays consistent. A future
+  // "Timbre swaps + counter-melody" stage is where the melody patch
+  // may diverge from the chord patch.
+  const keysSharedShape = {
     harmonicity: 3,
     modulationIndex: 7,
     oscillator: { type: 'sine' as const },
-    envelope: { attack: 0.03, decay: 0.7, sustain: 0.28, release: 0.8 },
     modulation: { type: 'triangle' as const },
     modulationEnvelope: { attack: 0.02, decay: 0.4, sustain: 0.1, release: 0.6 },
   };
   const keysChord = new Tone.PolySynth(Tone.FMSynth, {
-    ...keysSharedPatch,
+    ...keysSharedShape,
+    // Sustain raised 0.28 → 0.55 (2026-06-17) so hold-with-refresh and
+    // pure-hold patterns' multi-second sustained ring is actually
+    // audible. With sustain 0.28, sustained held chords sat at ~0.15
+    // amplitude — quieter than the soft refresh taps that punctuated
+    // them, producing a "discrete attacks over near-silence" feel
+    // (i.e. choppy) instead of "ringing chord with subtle taps."
+    envelope: { attack: 0.03, decay: 0.7, sustain: 0.55, release: 0.8 },
     volume: -13,
   }).connect(chorus);
   const keysMelody = new Tone.PolySynth(Tone.FMSynth, {
-    ...keysSharedPatch,
+    ...keysSharedShape,
+    envelope: { attack: 0.03, decay: 0.7, sustain: 0.28, release: 0.8 },
     volume: -9,
   }).connect(chorus);
 

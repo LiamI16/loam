@@ -51,6 +51,7 @@ Compact summary — full implementation notes in the linked docs.
 | Chord pattern menu (rework) | Per-slot 5-pattern Dirichlet selection (pure-hold / hold-with-refresh / call-response / light-comping / active-comping); activity-stream tilt; drops density + sync | See below |
 | render-snippet dev tool | LLM-readable event-log dump for offline analysis (fight ear fatigue) | See below |
 | Chord / melody channel split | `RHODES_CHORD` + `RHODES_MELODY` channels with separate synths; chord −13 dB, melody −9 dB; snare drop to −20 dB | See below |
+| Chord-synth envelope sustain | Chord synth sustain 0.28 → 0.55; melody stays at 0.28 (split now meaningful timbrally too) | See below |
 
 **Drum rewrite details:** `drum-scheduler.ts` rewritten. Per-voice
 constant micro-timing (snare drag +15 ms, hat slight ahead −3 ms,
@@ -143,6 +144,36 @@ categorical archetypes.
 **Files:** `chord-scheduler.ts`, `harmony/chords.ts`,
 `harmony/markov.ts`, `harmony/voicing.ts` (chromatic-approach
 hook), tests.
+
+---
+
+## Recently done — chord-synth envelope sustain raise
+
+Diagnosis (via render-snippet on seed 18396323215971596544): the
+`hold-with-refresh` pattern produced sustained chord rings at
+amplitude ~0.15 (sustain 0.28 × velocity 0.55) — *quieter* than
+the soft refresh taps that punctuated them (peak 0.40). Designed
+as "ringing chord with subtle taps"; behaved as "near-silent
+background pad with louder discrete attacks" — i.e. choppy.
+
+Fix (2026-06-17, adapter-only): chord synth envelope sustain
+raised 0.28 → 0.55. Sustained ring now lands at ~0.30 amplitude,
+comparable to soft tap peak. The held chord is audibly *there*
+during `pure-hold` and `hold-with-refresh` slot patterns. Melody
+synth sustain stays at 0.28 to preserve percussive single-note
+character — the chord/melody synth split now expresses *envelope*
+character differences too, not just volume.
+
+Side effect on active patterns: `light-comping` / `active-comping`
+beats now have a slightly more present sustained body between
+attacks. Probably a positive — chord feels more continuously
+present without losing percussive character (attack and decay
+phases unchanged).
+
+A cleaner architectural answer remains queued in the backlog:
+have the pad carry full chord harmony instead of root+fifth, and
+the rhodes can return to a percussive envelope. See backlog
+"Pad carries chord harmony."
 
 ---
 
@@ -364,6 +395,39 @@ only (pad goes wide via the widener instead). `fx.evoFilter.cutoff`,
 ---
 
 ## Backlog (ordered by listening impact)
+
+### Pad carries chord harmony (sustained-chord architectural fix)
+
+Today the pad plays root + fifth only, at -20 dB, sustaining for
+the chord-slot duration. The "sustained chord" feel during
+`pure-hold` and `hold-with-refresh` patterns depends entirely on
+the chord synth's envelope sustain phase being audible (we raised
+it 0.28 → 0.55 on 2026-06-17 to address this).
+
+A cleaner architectural answer: have the pad play the **full chord
+harmony** (or at least the inner voices the rhodes isn't carrying)
+during the slot. Then:
+- Pad becomes the sustained chord background (its actual role).
+- Rhodes chord layer can return to a more percussive envelope —
+  shorter sustain — since it just punctuates rhythmically.
+- The chord/melody envelope split widens naturally (rhodes back
+  to percussive, melody already percussive).
+
+Implications:
+- Pad scheduler needs the chord voicing, not just root + fifth.
+- Pad volume probably needs to come up (−20 dB → maybe −16 dB) so
+  the harmonic body is actually audible without dominating.
+- Per-seed mix-bias (next stage) becomes part of how we tune the
+  rhodes-vs-pad balance.
+
+Surfaced 2026-06-17 during the sustain-envelope discussion; queued
+as a candidate post-melody, alongside mix-bias.
+
+**Files:** `chord-scheduler.ts` (or new `pad-scheduler.ts` if pad
+gets its own logic separate from chord), `chains/lofi.ts`
+(pad volume), pad-related tests.
+
+---
 
 ### Mix-bias per seed — chord-dominance rebalancer
 
