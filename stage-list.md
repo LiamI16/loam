@@ -52,6 +52,7 @@ Compact summary — full implementation notes in the linked docs.
 | render-snippet dev tool | LLM-readable event-log dump for offline analysis (fight ear fatigue) | See below |
 | Chord / melody channel split | `RHODES_CHORD` + `RHODES_MELODY` channels with separate synths; chord −13 dB, melody −9 dB; snare drop to −20 dB | See below |
 | Chord-synth envelope sustain | Chord synth sustain 0.28 → 0.55; melody stays at 0.28 (split now meaningful timbrally too) | See below |
+| Pattern Markov + calmer targets | Per-slot comping pattern is now a Markov walk; targets shifted to [0.55, 0.28, 0.10, 0.05, 0.02] (verified via detailed balance) | See below |
 
 **Drum rewrite details:** `drum-scheduler.ts` rewritten. Per-voice
 constant micro-timing (snare drag +15 ms, hat slight ahead −3 ms,
@@ -144,6 +145,55 @@ categorical archetypes.
 **Files:** `chord-scheduler.ts`, `harmony/chords.ts`,
 `harmony/markov.ts`, `harmony/voicing.ts` (chromatic-approach
 hook), tests.
+
+---
+
+## Recently done — pattern Markov + calmer targets
+
+Family-listening pass (2026-06-19) flagged "the beat patterns sound
+random — makes the whole thing sound random, like it wasn't thought
+out carefully." Real diagnosis: the per-slot pattern roll had no
+memory, so every slot was a fresh independent draw. Real musicians
+commit to a feel for stretches and drift between feels musically.
+
+Switched per-slot pattern selection from independent rolls to a
+**Markov walk** on a transition matrix. Patterns stick (high
+self-loops) and drift along the activity axis (banded off-diagonals);
+far jumps (e.g. pure-hold → active-comping) are rare. The matrix is
+constructed via detailed balance so its stationary distribution
+exactly equals the new calm-leaning base weights
+`[0.55, 0.28, 0.10, 0.05, 0.02]` (verified by power-iteration during
+design).
+
+Target distribution shifted from `[0.40, 0.30, 0.15, 0.10, 0.05]` to
+`[0.55, 0.28, 0.10, 0.05, 0.02]` after honest review — the original
+targets put active-comping at 5% of listening time (~3 min/hour) and
+with the previous matrix it dwelled 28 s per burst. That's three
+distinct Nujabes-style moments per half hour, too prominent for
+calm-study music. Active-comping now lands at 2% of time with ~15 s
+dwell — roughly 5 brief bursts per hour, totalling ~1.2 min/hour.
+
+Key dwell times at 74 BPM, avg 9.1 s/slot (slot-bias mean 0.4):
+- pure-hold: ~42 s
+- hold-with-refresh: ~20 s
+- call-response: ~17 s
+- light-comping: ~20 s
+- active-comping: ~15 s
+
+Per-seed Dirichlet perturbation (α=20) of each matrix row keeps
+every seed close to the base while giving each its own slight
+stickiness profile. First slot still uses base weights via
+`selectPattern` (no prior pattern); subsequent slots use
+`selectNextPattern`. New seed child `chord-pattern-matrix-config`.
+
+Verified on previously-flagged seeds: slot sequences now cluster
+into 2-5-slot runs of the same pattern with adjacent-pattern drifts
+at boundaries (e.g. `HwR → HwR → CR → CR → CR → CR → CR`), exactly
+the "thought-out" feel the listening pass was missing.
+
+Engine fingerprint count stays 113 (the 5 s window covers only the
+first slot, which uses the pre-Markov path; adding a new seed child
+doesn't shift the existing children's RNG sequences).
 
 ---
 

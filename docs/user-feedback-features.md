@@ -6,4 +6,8 @@ This note lays out some early stage feedback I got on the prototype
 
 *DONE*
 
-## 
+## UI Color Themes
+Current background is warm orange, add forest theme, sky theme, etc
+
+## Copy Link
+The copy button under the seed should copy the link rather than the seed integer value

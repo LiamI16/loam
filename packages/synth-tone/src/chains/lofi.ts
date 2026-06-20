@@ -97,12 +97,12 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
     // them, producing a "discrete attacks over near-silence" feel
     // (i.e. choppy) instead of "ringing chord with subtle taps."
     envelope: { attack: 0.03, decay: 0.7, sustain: 0.55, release: 0.8 },
-    volume: -13,
+    volume: -15,
   }).connect(chorus);
   const keysMelody = new Tone.PolySynth(Tone.FMSynth, {
     ...keysSharedShape,
     envelope: { attack: 0.03, decay: 0.7, sustain: 0.28, release: 0.8 },
-    volume: -9,
+    volume: -8,
   }).connect(chorus);
 
   // ── soft pad (the "blanket") ─────────────────────────────────────

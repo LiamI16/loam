@@ -239,6 +239,21 @@ reset is a v2 break for any saved seed. Recorded:
   independently — preparation for melody rewrite. Fingerprint count
   stays at 113; first 6 event signatures change `rhodes` →
   `rhodes_chord` (string-level only).
+- 2026-06-19 (pattern Markov): the per-slot comping pattern is now a
+  Markov walk on a transition matrix conditioned on the previous
+  slot's pattern, rather than independent rolls from a single weight
+  vector. Patterns stick (calm-leaning self-loops) and drift musically
+  (adjacent-activity transitions favoured over jumps). Base weights
+  shifted `[0.40, 0.30, 0.15, 0.10, 0.05] → [0.55, 0.28, 0.10, 0.05,
+  0.02]` after a family-listening review flagged "random mash" feel
+  — calmer target distribution + Markov memory together produce
+  thought-out-feeling pattern flows. Adds seed child
+  `chord-pattern-matrix-config` (per-row Dirichlet perturbation at
+  α=20). First slot still uses base weights via `selectPattern`;
+  subsequent slots use `selectNextPattern`. Engine fingerprint count
+  stays at 113 (5 s window covers only the first slot, which is
+  pre-Markov path; new seed child doesn't shift existing children's
+  RNG sequences).
 
 ### 7.3 Derived methods aren't separately contract-locked
 

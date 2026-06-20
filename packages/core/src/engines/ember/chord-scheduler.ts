@@ -19,10 +19,13 @@ import {
   type HitSpec,
   MarkovChordWalk,
   modesAtPosition,
+  PATTERN_TRANSITION_MATRIX,
   perturbDirichlet,
   perturbMatrix,
+  perturbPatternMatrix,
   planSlot,
   rootlessVoicing,
+  selectNextPattern,
   selectPattern,
   SLOT_PATTERN_BASE_WEIGHTS,
   type SlotPattern,
@@ -183,8 +186,15 @@ export class ChordScheduler implements SubScheduler {
   private readonly activityStream: FbmParam;
   /** Per-seed Dirichlet-perturbed archetype weights. */
   private readonly archetypeWeights: number[];
-  /** Per-seed Dirichlet-perturbed pattern weights. */
+  /** Per-seed Dirichlet-perturbed pattern weights (first slot only,
+   * no prior pattern available). */
   private readonly patternWeights: number[];
+  /** Per-seed Dirichlet-perturbed pattern transition matrix. Each
+   * row is the next-pattern distribution given the current pattern. */
+  private readonly patternMatrix: number[][];
+  /** Tracks the previous slot's pattern so `selectNextPattern` can
+   * walk the Markov chain. Null until the first slot fires. */
+  private previousPattern: SlotPattern | null = null;
 
   constructor(
     private readonly seed: Seed,
@@ -247,6 +257,14 @@ export class ChordScheduler implements SubScheduler {
       seed.child('chord-pattern-config').rng(),
       DIRICHLET_ALPHA,
     );
+    // Per-seed Dirichlet-perturbed pattern transition matrix. Each row
+    // perturbed independently; α=20 keeps the matrix close to the base
+    // (and thus the stationary distribution close to the base weights).
+    this.patternMatrix = perturbPatternMatrix(
+      PATTERN_TRANSITION_MATRIX,
+      seed.child('chord-pattern-matrix-config').rng(),
+      DIRICHLET_ALPHA,
+    );
 
     this.reset();
   }
@@ -260,6 +278,7 @@ export class ChordScheduler implements SubScheduler {
     this.currentArchetype = 'close';
     this.currentPattern = 'pure-hold';
     this.currentPlan = [];
+    this.previousPattern = null;
     this.nextChord = null;
     this.nextVoicing = null;
     this.nextArchetype = 'close';
@@ -371,9 +390,22 @@ export class ChordScheduler implements SubScheduler {
     const bias = this.slotBiasStream.evaluate(barTime);
     this.currentSlotBars = this.slotLengthRng.nextFloat() < bias ? LONG_SLOT_BARS : SHORT_SLOT_BARS;
 
-    // Pattern selection, tilted by activity.
+    // Pattern selection. First slot has no prior — sample from per-seed
+    // base weights. Subsequent slots walk the Markov matrix conditioned
+    // on the previous pattern, so patterns stick and drift musically
+    // rather than rolling independently each slot. Activity stream
+    // tilts both paths identically.
     const activityBias = this.activityStream.evaluate(barTime);
-    this.currentPattern = selectPattern(this.patternWeights, activityBias, this.patternRng);
+    this.currentPattern =
+      this.previousPattern === null
+        ? selectPattern(this.patternWeights, activityBias, this.patternRng)
+        : selectNextPattern(
+            this.patternMatrix,
+            this.previousPattern,
+            activityBias,
+            this.patternRng,
+          );
+    this.previousPattern = this.currentPattern;
     this.currentPlan = planSlot(this.currentPattern, this.currentSlotBars);
 
     const chord = this.currentChord;

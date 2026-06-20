@@ -1,4 +1,5 @@
 import type { Rng } from '../../../rng/rng.js';
+import { perturbDirichlet } from './dirichlet.js';
 
 /**
  * Comping-pattern menu for the chord scheduler. Each pattern is a
@@ -38,9 +39,55 @@ export const SLOT_PATTERNS: readonly SlotPattern[] = [
   'active-comping',
 ];
 
-/** Calm-lofi-anchored base weights. Dirichlet-perturbed per seed at
- * construction. Index-aligned with `SLOT_PATTERNS`. */
-export const SLOT_PATTERN_BASE_WEIGHTS: readonly number[] = [0.4, 0.3, 0.15, 0.1, 0.05];
+/** Calm-lofi-anchored base weights, used for the *first* slot only
+ * (no prior pattern). Dirichlet-perturbed per seed. After slot 0,
+ * patterns are drawn from `PATTERN_TRANSITION_MATRIX` indexed by the
+ * previous pattern (Markov walk). The base weights here match the
+ * stationary distribution of the transition matrix so first-slot
+ * behaviour is consistent with long-run behaviour. */
+export const SLOT_PATTERN_BASE_WEIGHTS: readonly number[] = [0.55, 0.28, 0.1, 0.05, 0.02];
+
+/**
+ * Markov transition matrix on patterns. Rows are indexed by the
+ * *current* pattern; each row is the probability distribution over
+ * the *next* pattern. Constructed via detailed balance to make the
+ * stationary distribution exactly equal `SLOT_PATTERN_BASE_WEIGHTS`,
+ * so the long-run frequency of each pattern matches the calm-lofi
+ * target without depending on the activity stream tilt to enforce it.
+ *
+ * Row order = `SLOT_PATTERNS` order = [PH, HwR, CR, LC, AC].
+ *
+ * Key properties:
+ *   - **Calm gravity** (asymmetric): backward (toward calmer) transitions
+ *     are more likely than forward (toward busier). Encodes genre bias
+ *     at the architectural level.
+ *   - **Endpoint stickiness**: PH self-loop is highest (0.785, dwell
+ *     ~42 s at 74 BPM); CR is the lowest (0.478, ~17 s) — the middle
+ *     pattern is transitional, not committed.
+ *   - **AC exits broadly**: when active-comping ends, outflow is
+ *     distributed evenly across the four other patterns. Avoids the
+ *     "AC always decays to LC" artefact of forcing the AC dwell short
+ *     via heavy AC↔LC coupling alone.
+ *   - **AC dwell ~15 s, ~5 entries/hour**: brief Nujabes-flavoured
+ *     bursts as a rare accent, not a sustained section.
+ *
+ * Verified via power-iteration of pi · P = pi during development.
+ * Per-seed Dirichlet perturbation (α=20) keeps every seed close to
+ * this matrix while letting some seeds drift slightly stickier or
+ * looser.
+ */
+export const PATTERN_TRANSITION_MATRIX: ReadonlyArray<readonly number[]> = [
+  // From pure-hold
+  [0.785, 0.18, 0.025, 0.005, 0.005],
+  // From hold-with-refresh
+  [0.354, 0.54, 0.08, 0.015, 0.011],
+  // From call-response
+  [0.138, 0.224, 0.478, 0.13, 0.03],
+  // From light-comping
+  [0.055, 0.084, 0.26, 0.541, 0.06],
+  // From active-comping
+  [0.15, 0.15, 0.15, 0.15, 0.4],
+];
 
 /** Per-pattern activity score in [0, 1]. Tilting input for
  * `selectPattern`. Pure hold = 0 (lowest activity); active comping =
@@ -224,7 +271,10 @@ function planActiveComping(slotBars: number): BarPlan[] {
 }
 
 /**
- * Pick a pattern from `weights` tilted by `activityBias`.
+ * Pick a pattern from `weights` tilted by `activityBias`. Used for the
+ * first slot (no prior pattern) and as the underlying mechanism shared
+ * with `selectNextPattern` (which delegates to this on a single row of
+ * the transition matrix).
  *
  * Soft Boltzmann tilt: each pattern's weight is multiplied by
  * `exp(K · (activityBias − 0.5) · (PATTERN_ACTIVITY[p] − 0.5))`, then
@@ -262,4 +312,46 @@ export function selectPattern(
     if (roll < acc) return SLOT_PATTERNS[i] as SlotPattern;
   }
   return SLOT_PATTERNS[SLOT_PATTERNS.length - 1] as SlotPattern;
+}
+
+/**
+ * Pick the next pattern given the current pattern via Markov walk on
+ * `matrix`. The matrix's row for `currentPattern` is the weight vector;
+ * activity tilt is applied identically to `selectPattern`. Per-seed
+ * Dirichlet perturbation is applied to the matrix at construction
+ * (see `perturbPatternMatrix`).
+ */
+export function selectNextPattern(
+  matrix: ReadonlyArray<readonly number[]>,
+  currentPattern: SlotPattern,
+  activityBias: number,
+  rng: Rng,
+): SlotPattern {
+  const rowIdx = SLOT_PATTERNS.indexOf(currentPattern);
+  if (rowIdx < 0) {
+    throw new Error(`selectNextPattern: unknown pattern ${currentPattern}`);
+  }
+  const row = matrix[rowIdx];
+  if (row === undefined || row.length !== SLOT_PATTERNS.length) {
+    throw new Error(`selectNextPattern: malformed matrix row at ${rowIdx}`);
+  }
+  return selectPattern(row, activityBias, rng);
+}
+
+/**
+ * Per-seed Dirichlet perturbation of the pattern-transition matrix.
+ * Each row is perturbed independently using the same `perturbDirichlet`
+ * machinery as the chord Markov matrix; α=20 (mild) keeps every seed
+ * close to the base matrix.
+ */
+export function perturbPatternMatrix(
+  matrix: ReadonlyArray<readonly number[]>,
+  rng: Rng,
+  alpha: number,
+): number[][] {
+  const out: number[][] = [];
+  for (const row of matrix) {
+    out.push(perturbDirichlet(row, rng, alpha));
+  }
+  return out;
 }
