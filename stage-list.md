@@ -446,6 +446,39 @@ only (pad goes wide via the widener instead). `fx.evoFilter.cutoff`,
 
 ## Backlog (ordered by listening impact)
 
+### Chord pattern-layer identity strengthening (deferred)
+
+Per-slot pattern Markov (landed 2026-06-19) introduced memory and
+fixed the "random mash" feel, but at the cost of slightly weakened
+per-seed identity in the *pattern* dimension specifically. The
+Markov chain mixes toward its stationary distribution, which is
+closer to the universal base than the per-seed perturbed matrix
+is.
+
+Deferred because: no listening evidence yet that seed identity in
+the chord layer actually feels weak. The eight-axis identity stack
+(BPM, register, chord-Markov, archetypes, pattern weights, pattern
+matrix, activity shape, slot-bias shape) is genuinely diverse.
+
+**When to revisit:** if seeds start sounding similar in the chord
+layer after melody + arrangement work lands.
+
+**Concrete options (analyzed 2026-06-19, full notes in
+[docs/seed-identity.md](docs/seed-identity.md) "Known weak spots"):**
+
+1. Per-seed activity-tilt strength (`K ∈ [1, 5]`). Cheapest;
+   meaningful effect. **Recommended first move.**
+2. Per-seed favorite-transition spikes (amplify 1-2 transitions
+   per seed). Some perceptual risk.
+3. Per-seed activity↔slot-length coupling. First exercise of
+   seed-identity.md §3 (couplings — the unused layer of the
+   framework).
+
+**Files when picked up:** `chord-scheduler.ts` (seed-children
+draws), `comping-patterns.ts` (parameter on `selectNextPattern`).
+
+---
+
 ### Pad carries chord harmony (sustained-chord architectural fix)
 
 Today the pad plays root + fifth only, at -20 dB, sustaining for

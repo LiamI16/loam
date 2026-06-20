@@ -181,3 +181,57 @@ real but not yet automatable. For now: A/B listen tests on
 hand-picked seed pairs at each scheduler addition. Future:
 spectral / statistical-feature distance metrics over rendered
 audio (deferred Python harness territory).
+
+## Known weak spots (deferred strengthening work)
+
+### Chord pattern Markov layer (added 2026-06-19)
+
+The per-slot comping-pattern selection is now a Markov walk
+(`PATTERN_TRANSITION_MATRIX` in `harmony/comping-patterns.ts`),
+which produces musically coherent sticky-then-drift sequences but
+**weakens per-seed identity expression** compared to the previous
+independent-roll model:
+
+- Independent rolls exposed the seed's perturbed weight vector on
+  every slot — 100 slots = 100 samples of the seed's preferences.
+- Markov walks have a mixing time before consecutive samples become
+  independent. Once mixed, samples come from the seed's *stationary
+  distribution*, which is closer to the universal base than the
+  perturbed matrix itself is (because α=20 Dirichlet is conservative
+  per-row).
+
+**Net:** the per-seed *pattern* axis is mild — it's there but
+subtle. Seed identity overall is still strong because of the
+eight-axis stack (BPM, register, chord-Markov, archetypes, pattern
+weights, pattern matrix, activity shape, slot-bias shape) but the
+*pattern* dimension specifically is the new weakest identity link.
+
+**Why we deferred:** no listening evidence that seed identity in
+the chord layer actually feels weak (the family-listening feedback
+was about coherence, not seed homogeneity). The eight-axis stack
+is genuinely diverse. Premature strengthening adds risk without
+proven need.
+
+**When to revisit:** if listening tests across many seeds reveal
+that seeds start sounding similar in the chord layer after the
+melody and arrangement work lands.
+
+**Three strengthening options analysed during the design (2026-06-19),
+in order of preferred priority:**
+
+1. **Per-seed activity-tilt strength.** Currently `K = 3` (Boltzmann
+   tilt) is universal. Making it per-seed in `[1, 5]` gives some
+   seeds a strong activity-narrative arc and others a stable
+   anchored identity. Cheap (1 line per seed); meaningful effect.
+2. **Per-seed favorite-transition spikes.** Pick 1-2 transitions to
+   amplify per seed. Adds character recognizable on re-listen.
+   Some risk of audibly weird sequences if a rare transition gets
+   boosted.
+3. **Per-seed activity↔slot-length coupling (§3 first exercise).**
+   Some seeds correlate slot-length with activity; others
+   anti-correlate. Most theoretically elegant but highest perceptual
+   uncertainty.
+
+This is **also the first concrete place where §3 (couplings) is
+identified as the unused layer of the framework.** When the time
+comes to exercise §3, option 3 above is one natural entry point.
