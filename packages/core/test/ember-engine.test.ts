@@ -140,7 +140,9 @@ describe('EmberEngine', () => {
     // melody scheduler will read this stream at per-emission resolution.
     const e = new EmberEngine(Seed.from(42n));
     e.scheduleUntil(5);
-    const state = (e as unknown as { state: { chordActivityStream: { evaluate(t: number): number } } }).state;
+    const state = (
+      e as unknown as { state: { chordActivityStream: { evaluate(t: number): number } } }
+    ).state;
     const v = state.chordActivityStream.evaluate(1);
     expect(Number.isFinite(v)).toBe(true);
     // The exposed instance is the chord scheduler's own activity stream.

@@ -1,6 +1,6 @@
-import { perturbDirichlet } from '../harmony/index.js';
 import type { Rng } from '../../../rng/rng.js';
 import type { Seed } from '../../../rng/seed.js';
+import { perturbDirichlet } from '../harmony/index.js';
 
 /**
  * Melody template vocabulary + per-seed germ generation. Static data
@@ -47,17 +47,7 @@ export type TerminationType =
 
 export type StartConstraint = 'chord-tone-only' | 'any-pentatonic';
 
-export type TemplateId =
-  | 'T1'
-  | 'T2'
-  | 'T3'
-  | 'T4'
-  | 'T5'
-  | 'T6'
-  | 'T7'
-  | 'T8'
-  | 'T9'
-  | 'T10';
+export type TemplateId = 'T1' | 'T2' | 'T3' | 'T4' | 'T5' | 'T6' | 'T7' | 'T8' | 'T9' | 'T10';
 
 export const TEMPLATE_IDS: readonly TemplateId[] = [
   'T1',

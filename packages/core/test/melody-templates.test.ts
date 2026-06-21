@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { Seed } from '../src/index.js';
 import {
   generateGerm,
   TEMPLATE_BASE_WEIGHTS,
   TEMPLATE_IDS,
   TEMPLATES,
 } from '../src/engines/ember/melody/index.js';
+import { Seed } from '../src/index.js';
 
 describe('melody templates + germ generation', () => {
   it('all ten templates are present and well-formed', () => {

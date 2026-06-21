@@ -6,7 +6,7 @@ import type { Rng } from '../../rng/rng.js';
 import type { Seed } from '../../rng/seed.js';
 import type { EngineState, SubScheduler } from './ember.js';
 import { dominantModeAtPosition, modeMidiBag } from './harmony/index.js';
-import { generateGerm, type Germ, type GermNote, type Template } from './melody/index.js';
+import { type Germ, type GermNote, generateGerm, type Template } from './melody/index.js';
 
 /**
  * Germ-driven melody scheduler. Phase 1 of three (see

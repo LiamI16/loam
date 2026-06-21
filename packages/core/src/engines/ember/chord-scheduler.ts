@@ -6,9 +6,9 @@ import type { Rng } from '../../rng/rng.js';
 import type { Seed } from '../../rng/seed.js';
 import type { EngineState, SubScheduler } from './ember.js';
 import {
-  applyThinness,
-  type Archetype,
   ARCHETYPES,
+  type Archetype,
+  applyThinness,
   type BarPlan,
   blendChordWeights,
   CHORDS,
@@ -25,10 +25,10 @@ import {
   perturbPatternMatrix,
   planSlot,
   rootlessVoicing,
-  selectNextPattern,
-  selectPattern,
   SLOT_PATTERN_BASE_WEIGHTS,
   type SlotPattern,
+  selectNextPattern,
+  selectPattern,
   type TransitionMatrix,
   voiceChord,
 } from './harmony/index.js';
