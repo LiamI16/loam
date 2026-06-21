@@ -11,3 +11,6 @@ Current background is warm orange, add forest theme, sky theme, etc
 
 ## Copy Link
 The copy button under the seed should copy the link rather than the seed integer value
+
+## Automatic Rain Cycle
+Instead of binary on/off for rain, cycle between on/off with varying durations
