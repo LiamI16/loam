@@ -1,78 +1,146 @@
 import { Channels } from '../../channels.js';
 import type { EngineEvent } from '../../events.js';
+import { Fbm1D } from '../../noise/fbm.js';
+import { FbmParam } from '../../params/param-stream.js';
 import type { Rng } from '../../rng/rng.js';
 import type { Seed } from '../../rng/seed.js';
 import type { EngineState, SubScheduler } from './ember.js';
-import {
-  type ChordSymbol,
-  chordPitchClasses,
-  dominantModeAtPosition,
-  modeMidiBag,
-} from './harmony/index.js';
-import { generateGerm, type Germ, type Template } from './melody/index.js';
+import { dominantModeAtPosition, modeMidiBag } from './harmony/index.js';
+import { generateGerm, type Germ, type GermNote, type Template } from './melody/index.js';
 
 /**
- * Sparse incidental melody on A-minor pentatonic. Each quarter-note,
- * fires with probability sampled from the density stream; when it fires,
- * picks a pentatonic note (filtered against the current chord to avoid
- * the worst dissonances), picks 4n or 8n duration 50/50, and emits a
- * soft `note` event on `Channels.RHODES_MELODY`.
+ * Germ-driven melody scheduler. Phase 1 of three (see
+ * `docs/melody-implementation-plan.md`).
  *
- * Stage 6 — chord-aware filter: when `state.currentChord` is set, blacklist
- * pentatonic notes whose pitch class is a semitone above or below any
- * chord tone (the most jarring clash with the wider Stage-6 harmony,
- * e.g. natural-E pentatonic over an Fm6 containing E♭). If the filter
- * empties the bag, fall back to a chord tone in the pentatonic's
- * register. This is a WIP guardrail — Stage 9 (L-system melody) will
- * subsume it with full chord-aware pitch selection.
+ * At each quarter-note position the F1 min-cap coupling formula
+ * computes an effective firing probability:
  *
- * Starts on quarter 1 (not 0) — matches the prototype's `'0:1'` start
- * offset so the first downbeat is silent and the melody enters on beat 2.
+ *   effective = (1 - c) · melody + c · min(melody, 1 - chord)
+ *
+ * Bernoulli draw against `effective`; when it fires, the next germ note
+ * is emitted (germ cycles indefinitely). Pitches come from the per-seed
+ * germ (scale-degree offsets) projected onto the dominant mode bag at
+ * the current position. Transformations / buffer / four-way emission
+ * rules / swing + jitter all land in Phases 2-3.
+ *
+ * Seed children:
+ *   - `melody-template-config`         — Dirichlet template weights
+ *   - `melody-template`                — template-selection roll
+ *   - `melody-germ`                    — germ pitch + length rolls
+ *   - `melody-activity-fbm`            — melody's own activity fBm
+ *   - `melody-activity-config`         — per-seed mean / depth shape
+ *   - `melody-chord-coupling-fbm`      — coupling-strength fBm
+ *   - `melody-chord-coupling-config`   — per-seed mean / depth
+ *   - root `melody` stream             — per-emission Bernoulli + velocity
  */
+
+/** Per-seed melody-activity fBm. Mirrors the chord-activity shape so
+ * the two streams breathe on comparable scales — important because the
+ * min-cap formula mixes them additively. */
+const MELODY_ACTIVITY_MEAN = 0.35;
+const MELODY_ACTIVITY_MIN = 0.1;
+const MELODY_ACTIVITY_MAX = 0.7;
+const MELODY_ACTIVITY_BASE_FREQ = 1 / 90;
+const MELODY_ACTIVITY_MEAN_SHAPE_RANGE = 0.1;
+const MELODY_ACTIVITY_DEPTH_SHAPE_RANGE: [number, number] = [0.15, 0.35];
+
+/** Coupling stream per `docs/melody.md` F1: per-seed mean in [0.2, 0.8],
+ * depth in [0.05, 0.12], slowest octave ~4 min (slower than activity
+ * itself — coupling is a higher-level character trait). */
+const COUPLING_MEAN_RANGE: [number, number] = [0.2, 0.8];
+const COUPLING_DEPTH_RANGE: [number, number] = [0.05, 0.12];
+const COUPLING_BASE_FREQ = 1 / 240;
+const COUPLING_MIN = 0;
+const COUPLING_MAX = 1;
+
+/** Index into the mode bag where germ offset 0 anchors. The dominant
+ * mode bag spans ~A4..C6 (6 notes); index 2 lands around the middle. */
+const GERM_ANCHOR_INDEX = 2;
+
+/** Melody velocity range (carried over from the prior density-driven
+ * scheduler). Soft so the lead sits behind chord/pad despite the −9 dB
+ * channel offset. */
+const VEL_MIN = 0.22;
+const VEL_JITTER = 0.12;
+
 export class MelodyScheduler implements SubScheduler {
   private rng!: Rng;
   private nextQuarter = 1;
-  private readonly secondsPerQuarter: number;
-  /** Per-seed motivic axiom. Generated at construction from a template
-   * roll + per-template contour walk. See `docs/melody.md` §F2 +
-   * `melody/templates.ts`. Held (unused) until Commit C wires the
-   * emission rules; reserved here so the seed children are consumed
-   * once and germ identity stays stable across rebuilds. */
-  readonly germ: Germ;
+  private germIdx = 0;
+  private readonly secondsPerBeat: number;
+  /** Per-seed motivic axiom + the template that generated it. Germ is
+   * fixed for the session per F2; Phase 2 transformations will derive
+   * variations from this constant skeleton. */
   readonly template: Template;
+  readonly germ: Germ;
+  private readonly activityStream: FbmParam;
+  private readonly couplingStream: FbmParam;
 
   constructor(
     private readonly seed: Seed,
     private readonly state: EngineState,
   ) {
-    this.secondsPerQuarter = 60 / state.bpm;
+    this.secondsPerBeat = 60 / state.bpm;
+
     const { template, germ } = generateGerm(seed);
     this.template = template;
     this.germ = germ;
+
+    const actCfgRng = seed.child('melody-activity-config').rng();
+    const actMeanOffset = actCfgRng.nextRange(
+      -MELODY_ACTIVITY_MEAN_SHAPE_RANGE,
+      MELODY_ACTIVITY_MEAN_SHAPE_RANGE,
+    );
+    const actDepth = actCfgRng.nextRange(
+      MELODY_ACTIVITY_DEPTH_SHAPE_RANGE[0],
+      MELODY_ACTIVITY_DEPTH_SHAPE_RANGE[1],
+    );
+    this.activityStream = new FbmParam(new Fbm1D(seed.child('melody-activity-fbm')), {
+      mean: MELODY_ACTIVITY_MEAN + actMeanOffset,
+      depth: actDepth,
+      baseFreq: MELODY_ACTIVITY_BASE_FREQ,
+      minValue: MELODY_ACTIVITY_MIN,
+      maxValue: MELODY_ACTIVITY_MAX,
+    });
+
+    const couplingCfgRng = seed.child('melody-chord-coupling-config').rng();
+    const couplingMean = couplingCfgRng.nextRange(COUPLING_MEAN_RANGE[0], COUPLING_MEAN_RANGE[1]);
+    const couplingDepth = couplingCfgRng.nextRange(
+      COUPLING_DEPTH_RANGE[0],
+      COUPLING_DEPTH_RANGE[1],
+    );
+    this.couplingStream = new FbmParam(new Fbm1D(seed.child('melody-chord-coupling-fbm')), {
+      mean: couplingMean,
+      depth: couplingDepth,
+      baseFreq: COUPLING_BASE_FREQ,
+      minValue: COUPLING_MIN,
+      maxValue: COUPLING_MAX,
+    });
+
     this.reset();
   }
 
   reset(): void {
     this.nextQuarter = 1;
+    this.germIdx = 0;
     this.rng = this.seed.rng();
   }
 
   scheduleUntil(_from: number, to: number): EngineEvent[] {
     const events: EngineEvent[] = [];
-    while (this.nextQuarter * this.secondsPerQuarter < to) {
-      const time = this.nextQuarter * this.secondsPerQuarter;
-      const density = this.state.densityStream.evaluate(time);
-      if (this.rng.bernoulli(density)) {
-        // Stage 7c.2: mode-aware pitch bag. The dominant mode at the
-        // current position.x defines the scale; the melody picks from
-        // the corresponding hexatonic MIDI set (A4–C6). Chord-tone
-        // semitone filter still applies on top.
-        const dominantMode = dominantModeAtPosition(this.state.position.evaluate(time).x);
-        const bag = modeMidiBag(dominantMode);
-        const pitch = this.pickPitch(this.state.currentChord, bag);
-        const isQuarter = this.rng.bernoulli(0.5);
-        const durationMs = (isQuarter ? this.secondsPerQuarter : this.secondsPerQuarter / 2) * 1000;
-        const velocity = 0.22 + this.rng.nextFloat() * 0.12;
+    while (this.nextQuarter * this.secondsPerBeat < to) {
+      const time = this.nextQuarter * this.secondsPerBeat;
+      const effective = this.effectiveActivity(time);
+      // Always draw both rolls so that determinism is invariant to
+      // whether emission fires.
+      const fireRoll = this.rng.nextFloat();
+      const velRoll = this.rng.nextFloat();
+      if (fireRoll < effective) {
+        const note = this.germ[this.germIdx % this.germ.length] as GermNote;
+        this.germIdx++;
+        const pitch = this.pickGermPitch(note, time);
+        const durationMs = note.durationBeats * this.secondsPerBeat * 1000;
+        const velocity = VEL_MIN + velRoll * VEL_JITTER;
         events.push({
           kind: 'note',
           channel: Channels.RHODES_MELODY,
@@ -87,35 +155,30 @@ export class MelodyScheduler implements SubScheduler {
     return events;
   }
 
-  private pickPitch(chord: ChordSymbol | null, bag: readonly number[]): number {
-    if (!chord) return this.rng.pick(bag);
-    const chordPcs = chordPitchClasses(chord);
-    const chordPcSet = new Set(chordPcs);
-    // Chord tones are always allowed. A semitone-clash only matters for
-    // *non-chord-tones* (e.g., melody E over Fm6 is a real clash; melody
-    // C over Cmaj7 is the root and must not be filtered out because B is
-    // also in the chord).
-    const allowed = bag.filter(
-      (p) => chordPcSet.has(p % 12) || !semitoneClash(p % 12, chordPcs),
-    );
-    if (allowed.length > 0) return this.rng.pick(allowed);
-    // Scale fully clashes — fall back to a chord tone projected into
-    // the melody register (≈A4–C6, MIDI 69–84).
-    const fallback: number[] = [];
-    for (const pc of chordPcs) {
-      let p = pc;
-      while (p < 69) p += 12;
-      if (p <= 84) fallback.push(p);
-    }
-    return fallback.length > 0 ? this.rng.pick(fallback) : this.rng.pick(bag);
+  /** F1 min-cap coupling: melody plays as its own activity dictates,
+   * UNLESS the chord layer doesn't leave acoustic space. Preserves
+   * per-seed density character at every coupling value. */
+  private effectiveActivity(time: number): number {
+    const melody = this.activityStream.evaluate(time);
+    const chord = this.state.chordActivityStream.evaluate(time);
+    const coupling = this.couplingStream.evaluate(time);
+    return (1 - coupling) * melody + coupling * Math.min(melody, 1 - chord);
+  }
+
+  /** Project a germ note's scale-degree offset onto the active mode's
+   * MIDI bag. Clamped to the bag's index range (germs occasionally
+   * exceed ±anchor — clamping keeps the emission inside the melody
+   * register without distorting the contour silhouette). */
+  private pickGermPitch(note: GermNote, time: number): number {
+    const dominantMode = dominantModeAtPosition(this.state.position.evaluate(time).x);
+    const bag = modeMidiBag(dominantMode);
+    const idx = clampInt(GERM_ANCHOR_INDEX + note.scaleDegreeOffset, 0, bag.length - 1);
+    return bag[idx] as number;
   }
 }
 
-/** True if `pc` is a half-step above or below any pitch class in `chordPcs`. */
-function semitoneClash(pc: number, chordPcs: readonly number[]): boolean {
-  for (const c of chordPcs) {
-    const d = (((pc - c) % 12) + 12) % 12;
-    if (d === 1 || d === 11) return true;
-  }
-  return false;
+function clampInt(v: number, lo: number, hi: number): number {
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return Math.round(v);
 }

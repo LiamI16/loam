@@ -239,6 +239,26 @@ reset is a v2 break for any saved seed. Recorded:
   independently — preparation for melody rewrite. Fingerprint count
   stays at 113; first 6 event signatures change `rhodes` →
   `rhodes_chord` (string-level only).
+- 2026-06-21 (melody Commit C — germ + min-cap coupling): melody
+  scheduler rewritten from a density-driven pentatonic Bernoulli to a
+  germ-driven scheduler gated by the F1 min-cap chord-melody coupling
+  formula. Every seed's melody track changes substantially (new pitch
+  selection: germ scale-degree offsets projected onto the dominant
+  mode bag; new firing rate: per-seed `melody-activity-fbm` × coupling
+  with `chordActivityStream`). Adds seed children
+  `melody-template-config`, `melody-template`, `melody-germ` (Commit B,
+  scaffold) and `melody-activity-fbm/-config`,
+  `melody-chord-coupling-fbm/-config` (Commit C). The legacy
+  `state.densityStream` and `density` engine option are now a no-op for
+  melody (and unused engine-wide); kept around for now for back-compat
+  with the web demo's existing slider but slated for removal /
+  repurposing in a follow-up. Engine fingerprint count happens to
+  stay at 113 for `Seed.from(42n)` at `bpm: 74` in [0, 5s) — pure
+  coincidence (the new emission rate cancels the old density rate at
+  this seed/window). The audio contract changes for every seed; the
+  whole-engine fingerprint lock is necessarily incomplete here. Phase
+  2 (transformations + 4-way emission rules + recent buffer) and
+  Phase 3 (swing + jitter) will each introduce further resets.
 - 2026-06-19 (pattern Markov): the per-slot comping pattern is now a
   Markov walk on a transition matrix conditioned on the previous
   slot's pattern, rather than independent rolls from a single weight

@@ -62,37 +62,6 @@ describe('EmberEngine', () => {
     expect(bellEvents).toHaveLength(0);
   });
 
-  it('setOption("density", 0) substantially reduces melody firings', () => {
-    // Density is fBm-driven (Stage 5+): setting the mean to 0 doesn't
-    // hard-mute melody — the fBm motion around the mean can still pull
-    // the instantaneous density above 0 (clamped at 0). So we verify the
-    // weaker but still meaningful invariant: mean=0 produces far fewer
-    // melody notes than mean=1 over the same window.
-    //
-    // Counting note: the chord scheduler's pattern menu emits hits at
-    // various thinness levels (full / rootless / top-voices). Soft
-    // "top-voices" taps produce 2-voice rhodes events that look like
-    // melody to a `voices ≤ 2` filter. The reliable melody-only
-    // signal is *strictly* solo rhodes events — count timestamps with
-    // exactly one rhodes note.
-    const melodyCount = (mean: number) => {
-      const e = new EmberEngine(Seed.from(42n), { density: mean });
-      const events = e.scheduleUntil(60);
-      const rhodesByTime = new Map<number, number>();
-      for (const ev of events) {
-        if (ev.kind !== 'note') continue;
-        if ((ev as { channel: string }).channel !== 'rhodes_melody') continue;
-        rhodesByTime.set(ev.time, (rhodesByTime.get(ev.time) ?? 0) + 1);
-      }
-      let count = 0;
-      for (const n of rhodesByTime.values()) count += n;
-      return count;
-    };
-    const high = melodyCount(1.0);
-    const low = melodyCount(0);
-    expect(low).toBeLessThan(high * 0.3);
-  });
-
   it('speedMultiplier=1.0 is byte-identical to default', () => {
     const a = new EmberEngine(Seed.from(42n));
     const b = new EmberEngine(Seed.from(42n), { speedMultiplier: 1.0 });
@@ -239,6 +208,16 @@ describe('EmberEngine', () => {
     // ParamEvent at t=0 (BPM-derived delay time for the adapter).
     // Count: 112 + 1 = 113; the param slots in after the hat at
     // t=-0.003 and pushes the last rhodes out of the 6-slot slice.
+    // Melody Commit C (2026-06-21): melody scheduler rewritten as
+    // germ-driven with F1 min-cap chord-melody coupling. Per-seed
+    // audio character for *every* seed changes substantially (see
+    // docs/seed-format.md §7.3a); this whole-engine lock happens to
+    // still net to count 113 for seed 42 in [0, 5s) because the new
+    // emission rate at this seed/window cancels against the prior
+    // density-Bernoulli rate, and the first 6 events are all at
+    // t∈[-0.003, 0.000] (drum + pad + chord — before any melody
+    // quarter). The lock is incomplete by design; the audio
+    // contract change is documented in §7.3a regardless.
     expect({ count: events.length, fingerprint }).toEqual({
       count: 113,
       fingerprint: [
