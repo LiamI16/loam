@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { BassScheduler, Channels, CHORDS, Seed } from '../src/index.js';
+import { BassScheduler, CHORDS, Channels, Seed } from '../src/index.js';
 import { makeState } from './_helpers.js';
 
 const BPM = 60;
-const SECONDS_PER_BEAT = 1; // 60 BPM → 1 s / beat
 const SECONDS_PER_BAR = 4;
 const SECONDS_PER_CHORD = 2 * SECONDS_PER_BAR; // ChordScheduler's 2-bar cycle
 
@@ -38,9 +37,9 @@ describe('BassScheduler', () => {
     const state = makeStateWithChords();
     const s = new BassScheduler(Seed.from(42n), state);
     const events = s.scheduleUntil(0, SECONDS_PER_BAR);
-    const firstBeat1 = events.find(
-      (e) => e.kind === 'note' && e.channel === Channels.BASS,
-    ) as { pitch: number };
+    const firstBeat1 = events.find((e) => e.kind === 'note' && e.channel === Channels.BASS) as {
+      pitch: number;
+    };
     // Am7 (rootPc 9), lowest A in [36, 48] = 45.
     expect(firstBeat1.pitch).toBe(45);
   });

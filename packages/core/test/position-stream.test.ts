@@ -48,10 +48,6 @@ describe('PositionStream', () => {
       const p = ps.evaluate(t);
       return `${p.x.toFixed(6)}/${p.y.toFixed(6)}`;
     });
-    expect(samples).toEqual([
-      '-0.758392/0.677256',
-      '-0.641453/0.492423',
-      '-0.438349/0.171396',
-    ]);
+    expect(samples).toEqual(['-0.758392/0.677256', '-0.641453/0.492423', '-0.438349/0.171396']);
   });
 });

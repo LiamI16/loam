@@ -14,11 +14,11 @@ export {
   PATTERN_TRANSITION_MATRIX,
   perturbPatternMatrix,
   planSlot,
+  SLOT_PATTERN_BASE_WEIGHTS,
+  SLOT_PATTERNS,
+  type SlotPattern,
   selectNextPattern,
   selectPattern,
-  SLOT_PATTERN_BASE_WEIGHTS,
-  type SlotPattern,
-  SLOT_PATTERNS,
   type VoicingThinness,
 } from './comping-patterns.js';
 export { type DirichletOptions, perturbDirichlet, perturbMatrix } from './dirichlet.js';
@@ -31,18 +31,18 @@ export {
 export {
   blendChordWeights,
   dominantModeAtPosition,
-  type Mode,
   MODE_POOLS,
   MODES_ORDER,
+  type Mode,
   type ModePool,
   type ModeWeight,
   modeMidiBag,
   modesAtPosition,
 } from './modes.js';
 export {
-  applyThinness,
-  type Archetype,
   ARCHETYPES,
+  type Archetype,
+  applyThinness,
   DEFAULT_REGISTER,
   dropOneVoice,
   type Register,

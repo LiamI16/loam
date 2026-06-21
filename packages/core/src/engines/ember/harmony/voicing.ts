@@ -168,11 +168,15 @@ function rootlessIntervals(chord: ChordSymbol): number[] {
 
 /** Convert an intervals-from-root spec into actual MIDI pitches placed
  * near the centre of the register. Same chord → same pitches. */
-function placeFromScratch(rootPc: number, intervals: readonly number[], register: Register): number[] {
+function placeFromScratch(
+  rootPc: number,
+  intervals: readonly number[],
+  register: Register,
+): number[] {
   const center = Math.floor((register.low + register.high) / 2);
   const out: number[] = [];
   for (const i of intervals) {
-    const pc = ((rootPc + i) % 12 + 12) % 12;
+    const pc = (((rootPc + i) % 12) + 12) % 12;
     // Nearest pitch to `center` with this pitch class, within register.
     let best = -1;
     let bestDist = Number.POSITIVE_INFINITY;

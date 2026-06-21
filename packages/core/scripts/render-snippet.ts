@@ -18,10 +18,10 @@
  * Not built or distributed — intended for development use only.
  */
 
+import type { EngineEvent } from '../dist/index.js';
 // Imports from the built dist so Node can resolve `.js` extensions
 // without needing a transpiler. Build first: `pnpm --filter @loam/core build`.
 import { EmberEngine, Seed } from '../dist/index.js';
-import type { EngineEvent } from '../dist/index.js';
 
 interface Options {
   seeds: bigint[];
@@ -77,7 +77,9 @@ function renderSeed(seedValue: bigint, opts: Options): string {
 
   lines.push(`============================================================`);
   lines.push(`SEED ${seedValue}`);
-  lines.push(`BPM ${bpm}  |  bar = ${secondsPerBar.toFixed(3)}s  |  beat = ${secondsPerBeat.toFixed(3)}s`);
+  lines.push(
+    `BPM ${bpm}  |  bar = ${secondsPerBar.toFixed(3)}s  |  beat = ${secondsPerBeat.toFixed(3)}s`,
+  );
   lines.push(`Window: ${opts.start.toFixed(3)}s → ${(opts.start + opts.seconds).toFixed(3)}s`);
   lines.push(`============================================================`);
 
@@ -127,16 +129,13 @@ function renderSeed(seedValue: bigint, opts: Options): string {
   let slotIdx = 0;
   let currentBar = -1;
   for (const key of sortedKeys) {
-    const bucket = buckets.get(key)!;
+    const bucket = buckets.get(key) as NoteEvent[];
     const time = opts.start + key * step;
     const barIdx = Math.floor(time / secondsPerBar + 1e-6);
     const beatInBar = (time / secondsPerBeat) % 4;
 
     // Slot annotation
-    while (
-      slotIdx < slotAnnotations.length &&
-      slotAnnotations[slotIdx].time <= time + eps
-    ) {
+    while (slotIdx < slotAnnotations.length && slotAnnotations[slotIdx].time <= time + eps) {
       const s = slotAnnotations[slotIdx];
       lines.push(
         `  ───── SLOT @ ${formatTime(s.time)}s  pad-root=${s.padRoot}  voicing=[${s.voicing.join(',')}] (${s.thickness} voices)`,

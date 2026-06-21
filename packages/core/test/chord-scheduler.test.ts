@@ -34,9 +34,7 @@ describe('ChordScheduler (comping)', () => {
     const events = s.scheduleUntil(0, SECONDS_PER_BAR * 12);
     const padTimes = [
       ...new Set(
-        events
-          .filter((e) => e.kind === 'note' && e.channel === Channels.PAD)
-          .map((e) => e.time),
+        events.filter((e) => e.kind === 'note' && e.channel === Channels.PAD).map((e) => e.time),
       ),
     ].sort((a, b) => a - b);
     expect(padTimes.length).toBeGreaterThanOrEqual(3);
@@ -51,9 +49,7 @@ describe('ChordScheduler (comping)', () => {
     const events = s.scheduleUntil(0, SECONDS_PER_BAR * 40);
     const padTimes = [
       ...new Set(
-        events
-          .filter((e) => e.kind === 'note' && e.channel === Channels.PAD)
-          .map((e) => e.time),
+        events.filter((e) => e.kind === 'note' && e.channel === Channels.PAD).map((e) => e.time),
       ),
     ].sort((a, b) => a - b);
     for (let i = 1; i < padTimes.length; i++) {
@@ -69,18 +65,14 @@ describe('ChordScheduler (comping)', () => {
     const events = s.scheduleUntil(0, SECONDS_PER_BAR * 20);
     const padTimes = [
       ...new Set(
-        events
-          .filter((e) => e.kind === 'note' && e.channel === Channels.PAD)
-          .map((e) => e.time),
+        events.filter((e) => e.kind === 'note' && e.channel === Channels.PAD).map((e) => e.time),
       ),
     ];
     // Each pad time should have a simultaneous Rhodes voicing (≥3 notes).
     for (const t of padTimes) {
       const rhodesAtT = events.filter(
         (e) =>
-          e.kind === 'note' &&
-          e.channel === Channels.RHODES_CHORD &&
-          Math.abs(e.time - t) < 1e-6,
+          e.kind === 'note' && e.channel === Channels.RHODES_CHORD && Math.abs(e.time - t) < 1e-6,
       );
       expect(rhodesAtT.length).toBeGreaterThanOrEqual(3);
     }

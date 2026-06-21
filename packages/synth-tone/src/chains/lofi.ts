@@ -54,7 +54,7 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
     feedback: 0.3,
     wet: 1,
   }).connect(reverb);
-  const chordEchoSend = new Tone.Gain(0.20);
+  const chordEchoSend = new Tone.Gain(0.2);
   chordEchoSend.connect(chordEcho);
   chorus.connect(evoFilter);
   evoFilter.connect(keysPan);
