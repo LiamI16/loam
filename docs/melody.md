@@ -364,20 +364,203 @@ The recent buffer (rolling window of last N notes) provides local
 coherence — recent material recurring in the near future. Buffer
 size N is per-seed in `[4, 12]`.
 
-### Open sub-decisions for later
+### Germ pitch representation — key-relative (decided 2026-06-21)
 
-- **Germ pitch representation**: chord-relative shape (adapts as
-  chord changes, jazz-musician-like) vs key-relative pitches
-  (simpler, doesn't follow chord motion). Will resolve when
-  implementing templates.
-- **Per-seed transformation menu weights**: which transformations
-  each seed favours.
-- **The six template specifications** (concrete pitch contour +
-  rhythm cell for each).
-- **Rhythm-cell library** for templates.
+The germ is specified as **concrete pitches in the home key** (A
+minor / C major area). When the chord changes, the germ does *not*
+adapt its pitches — it floats over the harmony. Existing chord-aware
+filter (pentatonic-vs-chord-tone-semitone-clash check from the
+current melody scheduler) handles the worst clashes.
 
-These can be settled at implementation time; the overall framework
-is set.
+Three alternatives considered:
+
+- **Chord-relative shape** (germ as chord-tone indices, recomputed
+  per chord). Jazz-musician-like; adapts to harmonic motion. Per-
+  seed binary split (some seeds chord-relative, some key-relative)
+  would violate framework principle 1 (categorical archetypes).
+- **Continuous per-seed spectrum** (each emission probabilistically
+  picks key vs chord-relative). Mid-range seeds feel inconsistent.
+- **Universal hybrid with per-seed clash-tolerance.** Framework-
+  legal but subtle; per-seed expression rare given our pentatonic-
+  friendly chord vocabulary.
+
+**Deciding argument:** for our specific chord vocabulary (diatonic
+to C/Am, mostly pentatonic-friendly), the audible difference
+between chord-relative and key-relative is small. Most pentatonic
+germs fit most chords in the progression. The chord-relative
+approach adds sophistication mostly in edge cases.
+
+**Implementation discipline:** structure the germ as
+`pitch + scale_degree_offset` rather than raw MIDI so a future
+identity expansion (universal hybrid with per-seed clash-tolerance
+drift) is a reference-frame change, not a data-structure change.
+
+### Template vocabulary — ten templates (decided 2026-06-21)
+
+Six calm-lofi-core templates + two Ghibli-flavor + two
+lullaby/arpeggio extras. Calm core dominates base weights; Ghibli
+flavor stays rare-but-present for variation space (per the
+loose-lofi framing in CLAUDE.md). Per-seed Dirichlet at α=20 lets
+seeds lean slightly toward specific templates without becoming
+categorical.
+
+| # | Template | Notes | Default rhythm | Contour | Base weight |
+|---|---|---|---|---|---|
+| T1 | Rising-arc-resolution | 4 | `[8n, 8n, 4n, 2n]` | rise to peak, fall to chord tone | 0.17 |
+| T2 | Falling-stepwise-resolution | 4-5 | `[4n, 8n, 8n, 4n]` | continuous descent | 0.17 |
+| T3 | Pivot-tone (ABA) | 3 | `[4n, 4n, 2n]` | small motion around center tone | 0.13 |
+| T4 | Short-leap-and-step | 4 | `[4n, 8n, 8n, 2n]` | leap up, stepwise descent | 0.08 |
+| T5 | Held-then-fill | 3-4 | `[1n, 8n, 8n, 4n]` | sustain then quick fill | 0.10 |
+| T6 | Symmetric arc | 5 | `[8n, 8n, 4n, 8n, 8n]` | up to peak, return to start | 0.08 |
+| T7 | Ghibli wave/undulating | 5-7 | `[8n, 8n, 4n, 8n, 8n, 4n]` | multiple peaks/valleys | 0.06 |
+| T8 | Ghibli wide-leap with sustain | 3-4 | `[8n, 1n, 8n, 4n]` | leap + sustained held tone | 0.05 |
+| T9 | Cradle/rocking (lullaby) | 4-5 | `[4n, 4n, 4n, 4n]` | AB-AB oscillation | 0.10 |
+| T10 | Bell-arpeggio fragment | 3-4 | `[8n, 8n, 8n, 4n]` | rising/falling skip-motion through chord tones | 0.06 |
+
+Calm-core (T1–T6 + T9) = ~83%; Ghibli flavor (T7–T8) = 11%;
+arpeggio (T10) = 6%.
+
+**Each template specifies (full spec at implementation time):**
+- Contour archetype
+- Note count range
+- Default rhythm cell (referencing the rhythm library — open #4)
+- Interval bias (stepwise / step-with-leap / leap-then-resolve)
+- Termination type (resolve-to-root / resolve-to-third /
+  hang-on-extension / sustain)
+- Starting position constraint (chord-tone-only / any pentatonic)
+
+### Transformation menu — six normal + one gated (decided 2026-06-21)
+
+Six transformations available at every emission; retrograde gated to
+structural moments (chord changes / slot ends).
+
+| Transformation | Base weight | Effect |
+|---|---|---|
+| Transpose | 0.27 | sequence/restatement feel |
+| Fragment | 0.27 | motivic puzzle pieces |
+| Augment (stretch 2x) | 0.13 | lazy/sustained — fits calm lofi |
+| Add ornament | 0.16 | tasteful embellishment |
+| Invert | 0.10 | symmetric variation |
+| Diminish (compress 0.5x) | 0.07 | busy/quick — rare in calm |
+
+Sum: 1.00. Augment > diminish (2:1) because sustained character fits
+calm-lofi better than busy compression.
+
+**Retrograde — gated to structural moments.** At chord-change /
+slot-end moments, retrograde competes with the other six at weight
+~0.15 (renormalized). At other emission points, retrograde is not
+in the pool.
+
+Per-seed Dirichlet at α=20 applies to both the 6-item base menu
+and the structural-moment menu. Mirrors the per-seed perturbation
+pattern used throughout the engine.
+
+### Compound transformations — probabilistic 2-chain (decided 2026-06-21)
+
+Real music constantly stacks transformations (Bach transposes +
+augments a motif in a single gesture). Single-transformation-per-
+emission is a v1 simplification that gives up genuine expressiveness.
+
+**Mechanism (Option A from the design discussion):**
+
+1. Roll first transformation from the menu (or structural-moment
+   menu, if applicable).
+2. Apply to germ / buffer fragment.
+3. With probability `p_compound`: roll second transformation from
+   the same menu, excluding the first to avoid degenerate cases
+   (transpose-then-transpose = just larger transpose).
+4. Apply second to the result.
+
+Chains stop at length 2. Length-3+ chains were considered (Option
+B) but rejected — diminishing musical return; rare-firing third-
+level chains rarely produce listenable output without heavy tuning.
+
+**Retrograde allowed in compound chains** at structural moments.
+"Transposed-retrograde" is a classical/jazz construct; rare by
+gating, doesn't break calm character.
+
+**Per-seed `p_compound`** — fixed continuous-distribution draw at
+construction, drawn from `Beta(2, 5) · 0.5` (mean ~0.14, max
+~0.5). Drift was considered and rejected on perceptibility grounds:
+compound transformations fire ~once per 3 bars at typical rates;
+the listener has too few samples per minute to perceive rate
+changes. The fixed per-seed mean is enough identity expression at
+this firing rate. (The rare-event carve-out from `seed-identity.md`
+applies: continuous distribution, drift would be inaudible.)
+
+### Deferred to future stages
+
+- **Per-seed sub-parameters within transformations** — e.g.,
+  transpose-by-fourths-seed vs transpose-by-seconds-seed; specific
+  ornament types per seed; augmentation factor per seed. Adds
+  nesting depth without v1 benefit; revisit when other identity
+  dimensions are matured.
+
+### Rhythm cells + jitter + swing (decided 2026-06-21)
+
+Each template has a default rhythm cell (template-locked for v1).
+Per-seed cell choice (each seed picks from 2-3 compatible cells per
+template at construction) deferred to a future identity expansion.
+
+**Default rhythm cell per template:**
+
+| Template | Default rhythm cell | Notes |
+|---|---|---|
+| T1 Rising-arc-resolution | `[8n, 8n, 4n, 2n]` | accelerate into sustain |
+| T2 Falling-stepwise-resolution | `[4n, 8n, 8n, 8n, 4n]` | continuous descent |
+| T3 Pivot-tone | `[4n, 4n, 2n]` | even into hold |
+| T4 Short-leap-and-step | `[4n, 8n, 8n, 2n]` | leap then descent |
+| T5 Held-then-fill | `[1n, 8n, 8n, 4n]` | long hold then quick fill |
+| T6 Symmetric arc | `[8n, 8n, 4n, 8n, 8n]` | rise to peak, return |
+| T7 Ghibli wave | `[8t, 8t, 8t, 4n, 4n]` | **triplet wave** — Hisaishi signature |
+| T8 Ghibli wide-leap | `[8n, 1n, 8n, 4n]` | leap into sustained held tone (straight) |
+| T9 Cradle/rocking | `[4n, 4n, 4n, 4n]` | pure even oscillation |
+| T10 Bell-arpeggio | `[8n, 8n, 8n, 4n]` | steady eighths into quarter |
+
+T7 uses triplets exclusively; all other templates straight. T8 was
+considered for triplets but rejected — its gesture is "leap +
+sustain," and triplet resolution would fight the spacious character.
+
+**Timing jitter — ±5-10ms absolute (not percentage).**
+Drawn per-emission. Matches drum scheduler humanization (snare drag
++15ms, hat ahead −3ms, ±5ms jitter). Percentage-based jitter would
+drift into noticeable territory at slow tempi (±10% of 4n at 60 BPM
+= ±100ms — well into "sloppy playing"). Absolute ms keeps jitter at
+*humanization* level (barely perceptible), not *swing* level
+(intentionally felt).
+
+**Swing — per-seed sample-draw in `[0.50, 0.55]`.**
+Drawn at construction; fixed for the session. Applied at every
+melody 8n off-beat emission as a time offset:
+`offset = (swingRatio - 0.5) * eighthDuration`.
+
+- 0.50 = perfectly straight against the swung drum kit (pushed feel)
+- 0.55 = matches drum 16n-swing (locked-in groove)
+- Middle values feel "loose" — neither aligned nor pushed
+
+Universal swing was considered (one fixed value matching drums for
+all seeds) but rejected: per-seed sample-draw is implementation-
+trivial and creates a meaningful per-seed character continuum
+("this seed grooves tight" vs "feels pushed").
+
+fBm drift on swing was considered and rejected: swing is a
+*performance habit* not a creative free parameter — real musicians
+don't change their swing mid-song. Drift would manifest as audible
+rhythm wobble (salient transition), violating principle 1.
+
+Distribution shape: uniform. The 0.05-unit range is narrow enough
+that Beta-shaping makes negligible perceptual difference; uniform
+is more interpretable.
+
+### Deferred to future stages
+
+- **Per-seed cell choice within templates** (each seed picks from
+  2-3 compatible cells per template). Adds another identity
+  dimension without v1 benefit; revisit when other identity
+  dimensions mature.
+- **Per-seed asymmetric swing** (different ratios on different
+  off-beat positions, e.g., "and of 1" swings more than "and of 3").
+  Jazz-territory sophistication; out of scope for calm lofi v1.
 
 ## F3 — Relationship to chord layer
 
