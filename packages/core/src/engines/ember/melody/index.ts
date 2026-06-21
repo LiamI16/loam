@@ -1,0 +1,17 @@
+export {
+  type ContourArchetype,
+  durationToBeats,
+  generateGerm,
+  type Germ,
+  type GermNote,
+  type IntervalBias,
+  type NoteDuration,
+  type StartConstraint,
+  type Template,
+  TEMPLATE_BASE_WEIGHTS,
+  TEMPLATE_DIRICHLET_ALPHA,
+  TEMPLATE_IDS,
+  type TemplateId,
+  TEMPLATES,
+  type TerminationType,
+} from './templates.js';

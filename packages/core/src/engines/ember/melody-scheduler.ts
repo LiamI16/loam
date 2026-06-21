@@ -9,6 +9,7 @@ import {
   dominantModeAtPosition,
   modeMidiBag,
 } from './harmony/index.js';
+import { generateGerm, type Germ, type Template } from './melody/index.js';
 
 /**
  * Sparse incidental melody on A-minor pentatonic. Each quarter-note,
@@ -32,12 +33,22 @@ export class MelodyScheduler implements SubScheduler {
   private rng!: Rng;
   private nextQuarter = 1;
   private readonly secondsPerQuarter: number;
+  /** Per-seed motivic axiom. Generated at construction from a template
+   * roll + per-template contour walk. See `docs/melody.md` §F2 +
+   * `melody/templates.ts`. Held (unused) until Commit C wires the
+   * emission rules; reserved here so the seed children are consumed
+   * once and germ identity stays stable across rebuilds. */
+  readonly germ: Germ;
+  readonly template: Template;
 
   constructor(
     private readonly seed: Seed,
     private readonly state: EngineState,
   ) {
     this.secondsPerQuarter = 60 / state.bpm;
+    const { template, germ } = generateGerm(seed);
+    this.template = template;
+    this.germ = germ;
     this.reset();
   }
 
