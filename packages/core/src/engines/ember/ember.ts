@@ -55,6 +55,17 @@ export interface EngineState {
    * read this to know which chord is active at each moment in the
    * window. Cleared by ChordScheduler at the start of each pass. */
   chordSchedule: Array<{ time: number; chord: ChordSymbol }>;
+  /** Chord-activity fBm exposed by `ChordScheduler` at construction.
+   * `MelodyScheduler` reads via `.evaluate(time)` for the F1 min-cap
+   * chord-melody coupling formula (see `docs/melody.md`). The stream
+   * is *shared* (same instance) — no copy. */
+  chordActivityStream: ParamStream;
+  /** Slot-boundary engine-times appended by `ChordScheduler` during
+   * each `scheduleUntil` pass. `MelodyScheduler` uses these to detect
+   * structural moments where the retrograde transformation is
+   * eligible. Cleared by `ChordScheduler` at the start of each pass
+   * (same lifecycle as `chordSchedule`). */
+  structuralMomentTimes: number[];
   /** Stage 7a substrate. Slow 2D fBm-driven walk through the seed's
    * parameter landscape. Consumers read coords per emission and map to
    * whatever musical surface they bias. */
@@ -158,6 +169,11 @@ export class EmberEngine implements Engine {
       vinylEnabled,
       currentChord: null,
       chordSchedule: [],
+      // Placeholder so the field is non-null at construction; the
+      // `ChordScheduler` constructor (run immediately below) overwrites
+      // this with its own activityStream instance.
+      chordActivityStream: new StaticParam(0.5),
+      structuralMomentTimes: [],
       position,
       densityStream: new FbmParam(densityFbm, {
         mean: densityMean,

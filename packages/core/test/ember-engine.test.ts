@@ -166,6 +166,51 @@ describe('EmberEngine', () => {
     expect(e.getOptions().speedMultiplier).toBeGreaterThan(0);
   });
 
+  it('exposes chordActivityStream on EngineState (same instance as ChordScheduler)', () => {
+    // Commit A plumbing for the F1 chord-melody coupling formula. The
+    // melody scheduler will read this stream at per-emission resolution.
+    const e = new EmberEngine(Seed.from(42n));
+    e.scheduleUntil(5);
+    const state = (e as unknown as { state: { chordActivityStream: { evaluate(t: number): number } } }).state;
+    const v = state.chordActivityStream.evaluate(1);
+    expect(Number.isFinite(v)).toBe(true);
+    // The exposed instance is the chord scheduler's own activity stream.
+    const chords = (e as unknown as { chords: { activityStream: object } }).chords;
+    expect(state.chordActivityStream).toBe(chords.activityStream);
+  });
+
+  it('appends structural-moment timestamps at each chord-slot boundary', () => {
+    const e = new EmberEngine(Seed.from(42n), { bpm: 74 });
+    const events = e.scheduleUntil(30);
+    const state = (e as unknown as { state: { structuralMomentTimes: number[] } }).state;
+    // Slot boundaries == pad emission times (pad fires at each
+    // slot-advance). Distinct pad timestamps should equal the recorded
+    // structural moments for the most recent scheduleUntil window.
+    const padTimes = Array.from(
+      new Set(
+        events
+          .filter((ev) => ev.kind === 'note' && (ev as { channel: string }).channel === 'pad')
+          .map((ev) => (ev as { time: number }).time),
+      ),
+    ).sort((a, b) => a - b);
+    expect(state.structuralMomentTimes.length).toBeGreaterThan(0);
+    expect(state.structuralMomentTimes).toEqual(padTimes);
+  });
+
+  it('resets structuralMomentTimes per scheduleUntil call', () => {
+    const e = new EmberEngine(Seed.from(42n), { bpm: 74 });
+    e.scheduleUntil(10);
+    const state = (e as unknown as { state: { structuralMomentTimes: number[] } }).state;
+    const firstWindow = [...state.structuralMomentTimes];
+    e.scheduleUntil(20);
+    // Second pass clears and refills — must not accumulate window 1's
+    // entries (same lifecycle contract as chordSchedule).
+    for (const t of state.structuralMomentTimes) {
+      expect(t).toBeGreaterThanOrEqual(10 - 1e-9);
+    }
+    expect(state.structuralMomentTimes).not.toEqual(firstWindow);
+  });
+
   it('determinism contract — fixed seed produces a known fingerprint', () => {
     // BPM pinned explicitly to keep the lock stable across the per-seed
     // BPM-derivation change. Seed-derived BPM is exercised by other

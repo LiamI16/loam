@@ -245,6 +245,10 @@ export class ChordScheduler implements SubScheduler {
       minValue: ACTIVITY_MIN,
       maxValue: ACTIVITY_MAX,
     });
+    // Expose the activity stream to EngineState so the melody scheduler
+    // can evaluate it at per-emission resolution for the F1 min-cap
+    // chord-melody coupling formula. Shared instance — no copy.
+    state.chordActivityStream = this.activityStream;
 
     // Per-seed Dirichlet-perturbed archetype + pattern weights.
     this.archetypeWeights = perturbDirichlet(
@@ -296,6 +300,7 @@ export class ChordScheduler implements SubScheduler {
   scheduleUntil(_from: number, to: number): EngineEvent[] {
     const events: EngineEvent[] = [];
     this.state.chordSchedule = [];
+    this.state.structuralMomentTimes = [];
 
     while (this.nextBarIdx * this.secondsPerBar < to) {
       const barTime = this.nextBarIdx * this.secondsPerBar;
@@ -412,6 +417,7 @@ export class ChordScheduler implements SubScheduler {
     if (chord === null) return;
     this.state.currentChord = chord;
     this.state.chordSchedule.push({ time: barTime, chord });
+    this.state.structuralMomentTimes.push(barTime);
 
     const padRoot = nearestRoot(chord.rootPc, this.prevPadRoot);
     this.prevPadRoot = padRoot;
