@@ -24,6 +24,9 @@ plugin, sharing one engine.
   per-seed parameter decisions ("Minecraft seed" personality goal,
   the five-layer hybrid stack). Read before adding any new per-seed
   knob.
+- **`docs/melody.md`** — melody layer design decisions (role,
+  chord-melody coupling formula, phrase concept, strategy menu).
+  Read before any work in `melody-scheduler.ts`.
 - **`docs/event-protocol.md`** — typed engine↔adapter event contract.
 - **`docs/gaps.md`** — unresolved questions; check before assuming
   something's decided.
@@ -44,6 +47,12 @@ Don't relitigate without explicit ask:
 - No ML in v1
 - Core/adapter split: `@loam/core` framework-agnostic;
   `@loam/synth-tone` (Tone.js) is one adapter
+
+## Design-discussion discipline
+
+Before rejecting an option via framework principle, check whether
+constraints could make it compatible. "Rejected outright" is a flag
+to slow down, not speed up.
 
 ## Working notes
 
