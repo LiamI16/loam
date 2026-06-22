@@ -239,6 +239,21 @@ reset is a v2 break for any saved seed. Recorded:
   independently — preparation for melody rewrite. Fingerprint count
   stays at 113; first 6 event signatures change `rhodes` →
   `rhodes_chord` (string-level only).
+- 2026-06-21 (melody activity rate retune): post-Commit-E ear test
+  flagged the main melody as "firing too often" even on calm seeds.
+  Root cause: when Commit C swapped per-quarter single-note Bernoulli
+  for per-quarter multi-note fragments, the firing rate stayed at
+  the chord-activity-stream default (mean 0.35) — but each fire now
+  emits 3–5 notes instead of 1, so total melody note density was 5×
+  the pre-rewrite engine. Pulled `MELODY_ACTIVITY_MEAN` from 0.35
+  to 0.22 (slightly above the legacy `density` default of 0.18 to
+  acknowledge that fragments are richer events), and tightened range
+  from [0.10, 0.70] to [0.08, 0.50] to cap busy seeds at moderate
+  activity. Calm seeds (42, 1) now produce ~14 notes/min (close to
+  pre-rewrite ~11/min); active seeds (1012746201732607284, 7) produce
+  ~42 notes/min (well below the previous 80+/min for the same per-seed
+  character). No new seed children; no RNG count/order changes. Engine
+  fingerprint still 113 for seed 42 in [0, 5s).
 - 2026-06-21 (melody Commit E tuning — germ identifiability): post-E
   ear test (seed 42 / T10 arpeggio) showed the underlying germ shape
   was too recognisable across the supposedly-varied transformation

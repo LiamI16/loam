@@ -52,9 +52,19 @@ import {
  *                           + fresh-note rolls
  */
 
-const MELODY_ACTIVITY_MEAN = 0.35;
-const MELODY_ACTIVITY_MIN = 0.1;
-const MELODY_ACTIVITY_MAX = 0.7;
+/** Mean per-quarter fire probability. Re-tuned post-Commit-E ear test
+ * (seed 42 / "main melody firing so often"): the original 0.35 mean
+ * was inherited from the chord-activity stream, where each "fire" is a
+ * pattern hit — but melody fires are now multi-note fragments, so the
+ * effective note density is 3-5× higher than the chord layer. Pulled
+ * down to 0.22 — slightly above the pre-rewrite density default of
+ * 0.18 to acknowledge that fragments are richer events than the old
+ * one-note pings, but not so high that the melody feels constantly
+ * speaking. Range tightened to [0.08, 0.50] for the same reason —
+ * caps busy seeds at moderate-activity, not high-activity. */
+const MELODY_ACTIVITY_MEAN = 0.22;
+const MELODY_ACTIVITY_MIN = 0.08;
+const MELODY_ACTIVITY_MAX = 0.5;
 const MELODY_ACTIVITY_BASE_FREQ = 1 / 90;
 const MELODY_ACTIVITY_MEAN_SHAPE_RANGE = 0.1;
 const MELODY_ACTIVITY_DEPTH_SHAPE_RANGE: [number, number] = [0.15, 0.35];
