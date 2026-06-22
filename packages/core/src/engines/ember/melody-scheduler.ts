@@ -128,12 +128,20 @@ const COMPOUND_RATE_FACTOR = 0.5;
 /** Per-seed swing ratio. Drawn from `uniform[SWING_MIN, SWING_MAX]` at
  * construction; fixed for the session per `docs/melody.md` F2 (swing
  * is a performance habit, not a creative free parameter — drift would
- * read as audible rhythm wobble). 0.50 = perfectly straight; 0.55 =
- * matches the drum kit's 16n swing. The narrow range produces a
- * meaningful per-seed character continuum ("tight" vs "pushed") while
- * staying inside lofi-genre swing territory. */
+ * read as audible rhythm wobble).
+ *
+ * This is an **8n swing** — applied to off-beat 8th-note positions.
+ * The 8n vs 16n distinction matters: 16n swing values (Dilla pocket
+ * 0.58-0.62) translate to ~half-magnitude on 8n. The chosen range is
+ * canonical *lofi* 8n swing — audible per-seed character without
+ * crossing into jazz 8n territory (0.60+ on 8n reads as jazz piano).
+ *
+ * Range history: [0.50, 0.55] (Commit G — barely perceptible because
+ * drums also swing at 0.55) → [0.50, 0.60] (briefly — too jazz-y) →
+ * [0.50, 0.57] (current — lofi-canonical 8n swing, ~28 ms max offset
+ * at BPM 74). */
 const SWING_RATIO_MIN = 0.5;
-const SWING_RATIO_MAX = 0.55;
+const SWING_RATIO_MAX = 0.57;
 
 /** Tolerance for detecting 8n off-beat positions in beat-space. Germ
  * durations are computed via simple multiplication so exact equality

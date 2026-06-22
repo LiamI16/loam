@@ -529,7 +529,22 @@ drift into noticeable territory at slow tempi (±10% of 4n at 60 BPM
 *humanization* level (barely perceptible), not *swing* level
 (intentionally felt).
 
-**Swing — per-seed sample-draw in `[0.50, 0.55]`.**
+**Swing — per-seed sample-draw in `[0.50, 0.57]`.**
+
+> Range history (all 2026-06-22):
+>
+> 1. Originally spec'd `[0.50, 0.55]`. Implemented in Commit G; barely
+>    perceptible because the drum kit uses 0.55 — every seed's swing
+>    either matched drums or sounded slightly straighter, with no
+>    audible per-seed character continuum.
+> 2. Briefly widened to `[0.50, 0.60]`. Too far — 0.60 on **8n swing**
+>    enters jazz-piano territory (canonical lofi 8n swing is
+>    0.52–0.57; the Dilla-pocket reference of 0.58–0.62 is a *16n*
+>    convention, not 8n, so mapping it to our 8n positions doubles
+>    the offset).
+> 3. Re-narrowed to `[0.50, 0.57]`. Lofi-canonical 8n swing range —
+>    audible per-seed character without crossing into jazz-piano
+>    territory. Max offset ~28 ms at BPM 74.
 Drawn at construction; fixed for the session. Applied at every
 melody 8n off-beat emission as a time offset:
 `offset = (swingRatio - 0.5) * eighthDuration`.

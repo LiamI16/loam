@@ -239,6 +239,17 @@ reset is a v2 break for any saved seed. Recorded:
   independently — preparation for melody rewrite. Fingerprint count
   stays at 113; first 6 event signatures change `rhodes` →
   `rhodes_chord` (string-level only).
+- 2026-06-22 (melody swing range — final tuning): two-step
+  adjustment to the Commit G default.
+  First step: widened from `[0.50, 0.55]` to `[0.50, 0.60]` because
+  the original spec was inaudible (drum kit uses 0.55).
+  Second step (same day, after user ear test): re-narrowed to
+  `[0.50, 0.57]`. The 0.60 cap was using a Dilla-pocket 16n reference
+  inappropriately — we apply **8n** swing, not 16n, so the same
+  numeric value produces ~2× the perceptual offset. 0.60 on 8n is
+  jazz-piano territory. Final range is lofi-canonical 8n swing
+  (0.52–0.57), audible per-seed character without crossing into
+  jazz feel. Max offset ~28 ms at BPM 74. Fingerprint unchanged.
 - 2026-06-22 (melody Commit G — swing): per-seed swing ratio drawn
   from `uniform[0.50, 0.55]` at construction (fixed for the session)
   via the new `melody-swing-config` seed child. Per `docs/melody.md`

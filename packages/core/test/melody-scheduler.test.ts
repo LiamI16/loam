@@ -45,12 +45,12 @@ describe('MelodyScheduler', () => {
     expect(s.template.id).toMatch(/^T(10|[1-9])$/);
   });
 
-  it('per-seed swing ratio is in [0.50, 0.55] and stable for the same seed', () => {
+  it('per-seed swing ratio is in [0.50, 0.57] (lofi 8n swing) and stable for the same seed', () => {
     for (const seedVal of [42n, 1n, 7n, 1012746201732607284n]) {
       const a = new MelodyScheduler(Seed.from(seedVal), makeState());
       const b = new MelodyScheduler(Seed.from(seedVal), makeState());
       expect(a.swingRatio).toBeGreaterThanOrEqual(0.5 - 1e-9);
-      expect(a.swingRatio).toBeLessThanOrEqual(0.55 + 1e-9);
+      expect(a.swingRatio).toBeLessThanOrEqual(0.57 + 1e-9);
       expect(b.swingRatio).toBe(a.swingRatio);
     }
   });
