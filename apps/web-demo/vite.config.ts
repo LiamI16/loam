@@ -4,7 +4,11 @@ import { defineConfig } from 'vite';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // Production builds publish to GitHub Pages under `/loam/`, so the
+  // bundled HTML must reference assets at that subpath. Dev server
+  // keeps `/` so `pnpm dev` stays usable at the bare port.
+  base: command === 'build' ? '/loam/' : '/',
   // Resolve workspace packages straight to their source so library edits HMR
   // immediately. Without this, `@loam/core` etc. resolve to `dist/index.js`,
   // which requires a manual `tsup` rebuild after every change — easy to
@@ -23,4 +27,4 @@ export default defineConfig({
     outDir: 'dist',
     target: 'es2022',
   },
-});
+}));

@@ -1,0 +1,60 @@
+name: Deploy web demo
+
+on:
+  push:
+    branches: [main]
+  # Lets you re-run the deploy from the Actions tab without a code push
+  # (useful for retrying a transient failure or republishing after a
+  # Pages config change).
+  workflow_dispatch:
+
+# GitHub Pages needs:
+#  - pages: write   → publish the built artifact
+#  - id-token: write → OIDC trust for actions/deploy-pages
+#  - contents: read  → check out the repo
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deploy at a time. Newer push supersedes an in-flight
+# one rather than queueing — last-write-wins matches the iteration
+# loop ("push, see it live").
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web demo
+        run: pnpm --filter @loam/web-demo build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web-demo/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
