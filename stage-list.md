@@ -34,7 +34,7 @@ Compact summary — full implementation notes in the linked docs.
 | Stage 7c.2 | Mode blending wired into Markov + melody | inline |
 | Follow-up | Per-seed BPM derivation, range [60, 90] | inline |
 
-**Test count:** 86 green. **Engine fingerprint locked at `Seed.from(42n)` with `bpm: 74`** as the seed-format contract surface (see `docs/seed-format.md` §7.3a for the layered locks).
+**Test count:** 125 green. **Engine fingerprint locked at `Seed.from(42n)` with `bpm: 74`** as the seed-format contract surface (see `docs/seed-format.md` §7.3a for the layered locks).
 
 ---
 
@@ -53,6 +53,9 @@ Compact summary — full implementation notes in the linked docs.
 | Chord / melody channel split | `RHODES_CHORD` + `RHODES_MELODY` channels with separate synths; chord −13 dB, melody −9 dB; snare drop to −20 dB | See below |
 | Chord-synth envelope sustain | Chord synth sustain 0.28 → 0.55; melody stays at 0.28 (split now meaningful timbrally too) | See below |
 | Pattern Markov + calmer targets | Per-slot comping pattern is now a Markov walk; targets shifted to [0.55, 0.28, 0.10, 0.05, 0.02] (verified via detailed balance) | See below |
+| Melody rewrite (Phases 1–3) | Germ-driven scheduler: F1 min-cap chord coupling, 10 templates, 4-way emission rule, 6 transformations + retrograde gating, compound 2-chain, per-seed swing, per-emission jitter | See `docs/melody.md` + §7.3a |
+| analyze-seed dev tool | Scheduler-internal-state inspector (germ shape, per-seed parameter draws, effective-activity samples) — complements render-snippet | `scripts/analyze-seed.ts` |
+| Density option removed | `density` engine option + `densityStream` + density-fbm seed children excised; web-demo slider removed. Per-seed melody-activity now fully encapsulates the role | inline |
 
 **Drum rewrite details:** `drum-scheduler.ts` rewritten. Per-voice
 constant micro-timing (snare drag +15 ms, hat slight ahead −3 ms,
@@ -546,37 +549,38 @@ emit), new `chord.volume` adapter param.
 
 ---
 
-### Melody rewrite — motifs + sustain + pickups + arpeggiation
+### Seed discovery — inspect, find-by-character, presets
 
-The melody currently has zero memory between notes (each pitch is an
-independent Bernoulli draw from a pentatonic bag). Real melodies
-*reference themselves* — a 3-note motif appears, returns 4 bars later
-in slight variation, returns again. That's what gives "a melody"
-versus "noodling." User's other big listening complaint.
+Every per-seed knob (BPM, melody activity mean, coupling mean, template
+choice, swing ratio, compound rate, ...) is deterministic from the
+seed and computable without running the engine. Today the user has no
+way to navigate this space — they pick a seed, hear what it is, and
+move on. Reading docs/seed-identity.md, the principled answer to
+"user wants a calmer seed" is a seed-discovery affordance, not a
+post-hoc identity-override knob (the latter would re-introduce the
+same problem we removed when the BPM slider went away in Stage 6.5
+and the density slider went away on 2026-06-22).
 
-**Bundle (all touch `melody-scheduler.ts`):**
-- Motivic memory: scheduler retains a short rolling buffer of recent
-  notes; new emissions probabilistically repeat / transpose / invert
-  recent material. Replaces pure Bernoulli pitch picking.
-- Sustained tones: emit half-notes and whole-notes alongside the
-  current 4n / 8n. Space + holds are half the genre.
-- Pickup notes / anacrusis: phrase beginnings get a soft lead-in
-  note instead of starting cold on the downbeat.
-- **Arpeggiation as a melodic strategy.** Sometimes the melody plays
-  a chord-tone arpeggio (broken chord sequence) instead of a scalar
-  phrase or held note. Sits as one strategy among several;
-  arpeggio-leaning seeds get a recognizably "broken chord" feel
-  without the chord scheduler having to know about it. Bundled here
-  per the 2026-06-17 design decision (Path Y: role-separation —
-  chord scheduler always comps, melody scheduler covers arpeggios).
+**Bundle:**
+- `previewSeed(seedValue): SeedCharacter` — pure function returning
+  all per-seed derived parameters (BPM, melody activity mean,
+  coupling mean, template ID, swing ratio, compound rate, etc.)
+  without instantiating the engine. O(1).
+- **Seed inspector UI**: when a seed loads, show its character
+  ("calm | BPM 63 | sparse melody | arpeggio template | tight swing").
+- **"Find me calmer/busier"**: deterministic forward search from
+  the current seed for the next one matching a filter (e.g.
+  `activityMean < X`). Returns a seed value the user can load.
+- **Optional**: pre-computed character buckets shipped as data for
+  the first N seeds (calm / medium / energetic).
 
-**Why now:** addresses the "melody has no character" complaint.
-Drums + bass need to be in place first so the melody has something
-musical to sit on.
+**Why now:** the melody rewrite shipped, and the density slider was
+removed because it conflicted with seed-identity. Seed discovery is
+the right tool for the "I want a different mood" use case the slider
+was poorly serving.
 
-**Files:** `melody-scheduler.ts`, melody tests, possibly the
-"Stage 9 L-system" sketch in archived planning notes (this stage
-supersedes it).
+**Files:** new `seed-preview.ts` (likely in `engines/ember/`),
+web-demo UI additions, possibly `docs/seed-identity.md` doc updates.
 
 ---
 

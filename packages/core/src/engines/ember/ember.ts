@@ -12,16 +12,16 @@ import type { ChordSymbol } from './harmony/index.js';
 import { MelodyScheduler } from './melody-scheduler.js';
 
 /**
- * User-facing options for `EmberEngine`. `density` is the mean of an
- * fBm-driven stream — the actual instantaneous density wanders around it.
- * Depth and base frequency of the wander are seed-derived, not exposed.
+ * User-facing options for `EmberEngine`. Kept deliberately minimal: the
+ * seed *is* the song's identity (tempo, melody character, chord vocabulary
+ * are all per-seed). User knobs are limited to playback-level controls
+ * (`speedMultiplier`) and feature toggles (`vinylEnabled`). See
+ * `docs/seed-identity.md` for the design rationale.
  */
 export interface EmberOptions {
   /** Tempo in beats per minute. Default 74. Not live-mutable; changing
    * BPM requires rebuilding the engine. */
   bpm?: number;
-  /** Centerpoint of the melody-firing-density fBm walk. 0..1. Default 0.18. */
-  density?: number;
   /** Whether to fire vinyl crackle events. Default true. */
   vinylEnabled?: boolean;
   /** Wall-clock playback speed multiplier. Live-mutable. 1.0 = normal;
@@ -35,8 +35,8 @@ export interface EmberOptions {
  * schedulers hold a reference and read fresh on every tick — mutations
  * by `engine.setOption(...)` propagate immediately (no copy semantics).
  *
- * Streams (`densityStream`, `evoCutoffStream`) are time-varying. Static
- * fields (`bpm`, `vinylEnabled`) change only via setOption or rebuild.
+ * Streams (`evoCutoffStream`, `chordActivityStream`) are time-varying.
+ * Static fields (`bpm`, `vinylEnabled`) change only via setOption or rebuild.
  *
  * `speedMultiplier` lives on the engine wrapper, not here — sub-schedulers
  * see only musical (engine) time and don't need to know about playback
@@ -44,7 +44,6 @@ export interface EmberOptions {
  */
 export interface EngineState {
   bpm: number;
-  densityStream: ParamStream;
   evoCutoffStream: ParamStream;
   vinylEnabled: boolean;
   /** Active chord at engine-time of the most recent chord emission.
@@ -131,17 +130,8 @@ export class EmberEngine implements Engine {
     // locked-sequence stability). Speed multiplier scales wall-clock
     // playback on top.
     const bpm = options.bpm ?? seed.child('bpm-config').rng().nextInt(60, 90);
-    const densityMean = options.density ?? 0.18;
     const vinylEnabled = options.vinylEnabled ?? true;
     this.speedMultiplier = clampSpeed(options.speedMultiplier ?? 1.0);
-
-    // Per-seed liveliness fingerprint for density: draw depth & base freq
-    // from a dedicated child stream so adding a new param later doesn't
-    // shift density's character. Ranges deliberately wide so two seeds
-    // produce audibly different breathing characters.
-    const densityCfgRng = seed.child('density-fbm-config').rng();
-    const densityDepth = densityCfgRng.nextRange(0.05, 0.3);
-    const densityBaseFreq = densityCfgRng.nextRange(0.005, 0.025);
 
     // Evo-filter sweep: depth range chosen to comfortably exceed the
     // prototype's static LFO swing (±750 Hz) at the high end, so the
@@ -150,7 +140,6 @@ export class EmberEngine implements Engine {
     const evoDepth = evoCfgRng.nextRange(600, 1400);
     const evoBaseFreq = evoCfgRng.nextRange(0.015, 0.04);
 
-    const densityFbm = new Fbm1D(seed.child('density-fbm'));
     const evoFbm = new Fbm1D(seed.child('evofilter-fbm'));
 
     // Stage 7a: slow 2D position. baseFreq 0.0014 Hz → slowest octave
@@ -175,13 +164,6 @@ export class EmberEngine implements Engine {
       chordActivityStream: new StaticParam(0.5),
       structuralMomentTimes: [],
       position,
-      densityStream: new FbmParam(densityFbm, {
-        mean: densityMean,
-        depth: densityDepth,
-        baseFreq: densityBaseFreq,
-        minValue: 0,
-        maxValue: 1,
-      }),
       // Evo-filter cutoff mean matches the prototype's static initial
       // value (1800 Hz). Range guards against the filter ever going
       // negative or above a reasonable cutoff.
@@ -282,21 +264,13 @@ export class EmberEngine implements Engine {
   }
 
   /**
-   * Live-mutate an engine option. `density` updates the fBm centerpoint
-   * without disturbing motion. `speedMultiplier` rescales wall-clock
+   * Live-mutate an engine option. `speedMultiplier` rescales wall-clock
    * playback going forward; in-flight events keep their old scaling.
    * `bpm` is intentionally not live-settable (sub-schedulers cache step
    * sizes); the demo rebuilds the engine on BPM change instead.
    */
   setOption<K extends keyof EmberOptions>(name: K, value: NonNullable<EmberOptions[K]>): void {
-    if (name === 'density') {
-      const stream = this.state.densityStream;
-      if (stream instanceof FbmParam) {
-        stream.mean = value as number;
-      } else if (stream instanceof StaticParam) {
-        stream.value = value as number;
-      }
-    } else if (name === 'vinylEnabled') {
+    if (name === 'vinylEnabled') {
       this.state.vinylEnabled = value as boolean;
     } else if (name === 'speedMultiplier') {
       this.speedMultiplier = clampSpeed(value as number);
@@ -306,12 +280,8 @@ export class EmberEngine implements Engine {
 
   /** Snapshot of current option setpoints (for UI / tests). */
   getOptions(): Required<EmberOptions> {
-    const ds = this.state.densityStream;
-    const densityMean =
-      ds instanceof FbmParam ? ds.mean : ds instanceof StaticParam ? ds.value : ds.evaluate(0);
     return {
       bpm: this.state.bpm,
-      density: densityMean,
       vinylEnabled: this.state.vinylEnabled,
       speedMultiplier: this.speedMultiplier,
     };

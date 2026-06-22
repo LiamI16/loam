@@ -13,7 +13,7 @@ describe('EmberEngine', () => {
   });
 
   it('emits all four event kinds within the first few seconds', () => {
-    const e = new EmberEngine(Seed.from(42n), { density: 1.0 }); // force melody firing
+    const e = new EmberEngine(Seed.from(42n));
     const events = e.scheduleUntil(20);
     const kinds = new Set(events.map((ev) => ev.kind));
     expect(kinds.has('note')).toBe(true);

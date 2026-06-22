@@ -50,7 +50,6 @@ const uiState = { rain: false, vinyl: true };
 function buildEngine(seedValue: bigint): EmberEngine {
   // BPM omitted → engine derives it from the seed.
   return new EmberEngine(Seed.from(seedValue), {
-    density: 0.05 + (Number($<HTMLInputElement>('den').value) / 100) * 0.33,
     vinylEnabled: uiState.vinyl,
     speedMultiplier: Number($<HTMLInputElement>('speed').value) / 100,
   });
@@ -153,13 +152,6 @@ $<HTMLInputElement>('warm').addEventListener('input', (e) => {
   const v = Number((e.target as HTMLInputElement).value);
   $<HTMLElement>('warmVal').textContent = v < 33 ? 'dark' : v < 66 ? 'soft' : 'open';
   adapter?.setParam('master.warmth', warmHz(v / 100));
-});
-
-$<HTMLInputElement>('den').addEventListener('input', (e) => {
-  const v = Number((e.target as HTMLInputElement).value);
-  $<HTMLElement>('denVal').textContent = v < 33 ? 'low' : v < 66 ? 'med' : 'busy';
-  const density = 0.05 + (v / 100) * 0.33;
-  engine?.setOption('density', density);
 });
 
 $<HTMLInputElement>('speed').addEventListener('input', (e) => {
