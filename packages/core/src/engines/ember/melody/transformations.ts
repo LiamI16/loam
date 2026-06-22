@@ -44,14 +44,23 @@ export const STRUCTURAL_TRANSFORMATIONS: readonly TransformationKind[] = [
   'retrograde',
 ];
 
-/** Base weights for the non-structural six. Sum = 1.00. */
+/** Base weights for the non-structural six. Sum = 1.00.
+ *
+ * Re-tuned post-Commit-E ear test: of the six, only `fragment` and
+ * `ornament` actually disguise the germ's contour-shape — the other
+ * four preserve rhythm + interval pattern (transpose shifts pitch;
+ * invert mirrors; augment/diminish stretch durations). Original
+ * weights `[0.27, 0.27, 0.13, 0.07, 0.10, 0.16]` were too kind to
+ * shape-preserving transforms, so listeners caught the underlying
+ * germ across many "different" firings. Shifted toward fragment +
+ * ornament. */
 export const TRANSFORMATION_BASE_WEIGHTS: readonly number[] = [
-  0.27, // transpose
-  0.27, // fragment
-  0.13, // augment
-  0.07, // diminish
-  0.1, // invert
-  0.16, // ornament
+  0.18, // transpose
+  0.4, // fragment
+  0.09, // augment
+  0.05, // diminish
+  0.06, // invert
+  0.22, // ornament
 ];
 
 /** Retrograde's weight at structural moments. The other six are scaled
@@ -105,13 +114,23 @@ function transpose(source: Germ, rng: Rng): Germ {
 
 /** Pick a contiguous slice of the source. Minimum length 2 (single-note
  * fragments degenerate into the `fresh` rule's territory). Sources of
- * length 1 are returned unchanged. */
+ * length 1 are returned unchanged.
+ *
+ * Length distribution is biased toward 2-note slices (70%), with 3
+ * notes (25%) and "full possible length" (5%) as the long tail. A
+ * uniform draw made fragments too long on average — listeners caught
+ * the underlying germ shape in 3-4 note slices. Two consecutive notes
+ * carry enough motivic signal without re-stating the contour. */
 function fragment(source: Germ, rng: Rng): Germ {
   if (source.length <= 2) return source;
   const maxStart = source.length - 2;
   const start = rng.nextInt(0, maxStart);
   const maxLen = source.length - start;
-  const len = rng.nextInt(2, maxLen);
+  const lengthRoll = rng.nextFloat();
+  let len: number;
+  if (lengthRoll < 0.7) len = 2;
+  else if (lengthRoll < 0.95) len = Math.min(3, maxLen);
+  else len = maxLen;
   return source.slice(start, start + len);
 }
 

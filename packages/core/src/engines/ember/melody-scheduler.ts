@@ -82,11 +82,13 @@ export type EmissionRule = 'germ' | 'transform' | 'buffer' | 'fresh';
 
 const EMISSION_RULES: readonly EmissionRule[] = ['germ', 'transform', 'buffer', 'fresh'];
 
-/** Base weights for the four-way rule. Germ-anchored so per-seed
- * identity (the germ itself) is heard often; the other three branches
- * carry variety + local coherence + chord-aware breakouts. Per-seed
+/** Base weights for the four-way rule. Re-tuned post-Commit-E ear test
+ * (seed 42 / T10 arpeggio): verbatim germ at 0.35 was making the
+ * underlying shape too identifiable across repetitions, even with
+ * transformations in the mix. Cut to 0.25; transform absorbs the
+ * delta to 0.40 so shape-disguising routings dominate. Per-seed
  * Dirichlet α=20 nudges each seed away from the central tendency. */
-const EMISSION_BASE_WEIGHTS: readonly number[] = [0.35, 0.3, 0.2, 0.15];
+const EMISSION_BASE_WEIGHTS: readonly number[] = [0.25, 0.4, 0.2, 0.15];
 
 const EMISSION_DIRICHLET_ALPHA = 20;
 
@@ -266,11 +268,18 @@ export class MelodyScheduler implements SubScheduler {
       return this.emitGerm(events, time, this.germ);
     }
     // transform / buffer: pick transformation, apply, emit.
-    const kind = this.pickTransformation(transformRoll, time);
+    // Buffer rule is *locked* to the fragment transformation — its job
+    // is to ensure recent material reappears as **short slices** rather
+    // than full-length recurrences (which would just re-state the germ
+    // shape). transformRoll is still consumed for determinism stability;
+    // its outcome is overridden for the buffer branch.
+    const transformKind = this.pickTransformation(transformRoll, time);
     let source: Germ;
+    let kind = transformKind;
     if (rule === 'buffer') {
       const window = this.bufferWindow();
       source = window.length >= 2 ? window : this.germ;
+      kind = 'fragment';
     } else {
       source = this.germ;
     }

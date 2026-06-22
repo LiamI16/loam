@@ -239,6 +239,29 @@ reset is a v2 break for any saved seed. Recorded:
   independently — preparation for melody rewrite. Fingerprint count
   stays at 113; first 6 event signatures change `rhodes` →
   `rhodes_chord` (string-level only).
+- 2026-06-21 (melody Commit E tuning — germ identifiability): post-E
+  ear test (seed 42 / T10 arpeggio) showed the underlying germ shape
+  was too recognisable across the supposedly-varied transformation
+  outputs. Three tunings applied together:
+  (1) Four-way emission weights shifted from `[0.35, 0.30, 0.20, 0.15]`
+      to `[0.25, 0.40, 0.20, 0.15]` — germ-verbatim cut from 35 % to
+      25 %; transform absorbs the delta.
+  (2) Transformation menu weights re-balanced from
+      `[0.27, 0.27, 0.13, 0.07, 0.10, 0.16]` to
+      `[0.18, 0.40, 0.09, 0.05, 0.06, 0.22]` (transpose / fragment /
+      augment / diminish / invert / ornament). The shape-preserving
+      four (transpose / invert / augment / diminish) lose ~half their
+      weight; fragment + ornament absorb it.
+  (3) `fragment` transformation length distribution biased to 2-note
+      slices (70 %) vs 3 (25 %) vs full-length (5 %); was uniform.
+  (4) Buffer rule locked to the `fragment` transformation regardless
+      of the per-seed Dirichlet selection (transformRoll still
+      consumed for determinism). Buffer's job is local-coherence via
+      *short slices*, not full-length recurrence.
+  No new seed children; all RNG draws unchanged in count/order, only
+  the weights they sample against. Every seed's audio shifts. Engine
+  fingerprint still 113 for seed 42 in [0, 5s) (no melody firings in
+  that window under any tuning).
 - 2026-06-21 (melody Commit E — transformations + retrograde
   gating): the `transform` and `buffer` branches of the four-way
   emission rule now route through `melody/transformations.ts`. Six
