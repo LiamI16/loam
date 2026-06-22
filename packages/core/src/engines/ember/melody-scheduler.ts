@@ -29,7 +29,7 @@ import {
 } from './melody/index.js';
 
 /**
- * Germ-driven melody scheduler — Phase 2 complete (Commits B–F).
+ * Germ-driven melody scheduler — Phases 1-3 complete (Commits B–H).
  *
  * Each firing emits a *multi-note fragment* (or a single chord-aware
  * note in the `fresh` case), not a single per-quarter note. At each
@@ -57,8 +57,15 @@ import {
  *   - `melody-transformation` / `melody-transformation-config` /
  *     `melody-transformation-param`                                    (Commit E)
  *   - `melody-compound` / `melody-compound-config`                     (Commit F)
+ *   - `melody-swing-config`                                            (Commit G)
+ *   - `melody-jitter`                                                  (Commit H)
  *   - root `melody` stream: per-firing fireRoll + per-note velocity
  *                           + fresh-note rolls
+ *
+ * Timing layers on emission: each note's time is
+ * `fragmentStart + cursorBeats · spq + swingOffset + jitter` —
+ * fragmentStart from `nextQuarter`, swingOffset on 8n off-beats only
+ * (per-seed, fixed), jitter uniform `±7ms` per-emission.
  */
 
 /** Mean per-quarter fire probability. Re-tuned post-Commit-E ear test
@@ -148,6 +155,18 @@ const SWING_RATIO_MAX = 0.57;
  * to 0.5 fractional is fine, but allow a tiny epsilon for safety. */
 const OFFBEAT_EPSILON = 1e-9;
 
+/** Per-emission timing jitter (absolute, not percentage). Each emitted
+ * note gets a uniform `[-JITTER_RANGE_MS, +JITTER_RANGE_MS]` ms offset
+ * applied on top of any swing offset. Per `docs/melody.md` F2: jitter
+ * is "humanization level, not swing level" — small enough that no
+ * single emission's offset is *intentionally felt*, but enough to
+ * lose the metronome-perfect quality across many emissions. 7 ms is
+ * the midpoint of the spec'd 5–10 ms range. Drums don't actually
+ * have a *timing* jitter analog (they have velocity jitter + fixed
+ * per-voice offsets), so this is melody's own humanization layer. */
+const JITTER_RANGE_MS = 7;
+const JITTER_RANGE_SEC = JITTER_RANGE_MS / 1000;
+
 export class MelodyScheduler implements SubScheduler {
   private rng!: Rng;
   private emissionRng!: Rng;
@@ -179,6 +198,9 @@ export class MelodyScheduler implements SubScheduler {
   private readonly swingOffsetSec: number;
   /** Public for diagnostic tooling (`scripts/analyze-seed.ts`). */
   readonly swingRatio: number;
+  /** Per-emission timing jitter rng. Drawn from `melody-jitter` seed
+   * child so jitter doesn't perturb other rng streams' sequences. */
+  private jitterRng!: Rng;
 
   constructor(
     private readonly seed: Seed,
@@ -261,6 +283,7 @@ export class MelodyScheduler implements SubScheduler {
     this.transformationRng = this.seed.child('melody-transformation').rng();
     this.transformationParamRng = this.seed.child('melody-transformation-param').rng();
     this.compoundRng = this.seed.child('melody-compound').rng();
+    this.jitterRng = this.seed.child('melody-jitter').rng();
   }
 
   scheduleUntil(_from: number, to: number): EngineEvent[] {
@@ -416,7 +439,8 @@ export class MelodyScheduler implements SubScheduler {
       // positions (1/3, 2/3) are unaffected, as intended for T7.
       const frac = cursorBeats - Math.floor(cursorBeats);
       const swing = Math.abs(frac - 0.5) < OFFBEAT_EPSILON ? this.swingOffsetSec : 0;
-      const noteTime = startTime + cursorBeats * this.secondsPerBeat + swing;
+      const jitter = (this.jitterRng.nextFloat() * 2 - 1) * JITTER_RANGE_SEC;
+      const noteTime = startTime + cursorBeats * this.secondsPerBeat + swing + jitter;
       const pitch = this.pickGermPitch(note, noteTime);
       const durationMs = note.durationBeats * this.secondsPerBeat * 1000;
       const velocity = VEL_MIN + this.rng.nextFloat() * VEL_JITTER;
@@ -448,13 +472,17 @@ export class MelodyScheduler implements SubScheduler {
     const pitch = this.pickFreshPitch(chord, bag);
     const durationMs = durationBeats * this.secondsPerBeat * 1000;
     const velocity = VEL_MIN + this.rng.nextFloat() * VEL_JITTER;
+    // Per-emission timing jitter applied to fresh notes too, so they
+    // don't sit metronome-perfect on the quarter while germ notes
+    // around them are humanised.
+    const jitter = (this.jitterRng.nextFloat() * 2 - 1) * JITTER_RANGE_SEC;
     events.push({
       kind: 'note',
       channel: Channels.RHODES_MELODY,
       pitch,
       velocity,
       durationMs,
-      time,
+      time: time + jitter,
     });
     // Push the fresh note onto the buffer as a synthetic GermNote so
     // future buffer transformations can consume it. Approximate the

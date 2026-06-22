@@ -239,6 +239,15 @@ reset is a v2 break for any saved seed. Recorded:
   independently — preparation for melody rewrite. Fingerprint count
   stays at 113; first 6 event signatures change `rhodes` →
   `rhodes_chord` (string-level only).
+- 2026-06-22 (melody Commit H — per-emission timing jitter): Phase 3
+  complete. Every emitted melody note (germ-derived OR fresh) gets a
+  uniform `[-7ms, +7ms]` offset applied on top of any swing offset.
+  Drawn per-emission from the new `melody-jitter` seed child (its own
+  rng stream so jitter doesn't perturb other rngs). Absolute ms, not
+  percentage, per `docs/melody.md` F2 — keeps humanization at "barely
+  perceptible" magnitude regardless of BPM (a percentage-of-quarter
+  jitter would scale to sloppy ranges at slow tempi). 7 ms is the
+  midpoint of the spec'd 5–10 ms range. Engine fingerprint unchanged.
 - 2026-06-22 (melody swing range — final tuning): two-step
   adjustment to the Commit G default.
   First step: widened from `[0.50, 0.55]` to `[0.50, 0.60]` because

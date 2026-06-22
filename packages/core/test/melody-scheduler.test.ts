@@ -66,37 +66,66 @@ describe('MelodyScheduler', () => {
     expect(ratios.size).toBeGreaterThanOrEqual(7);
   });
 
-  it('emitted note times are consistent with the per-seed swing offset', () => {
-    // Property: every emitted note time `t` has a fractional-beat
-    // position that's either an exact germ-rhythm position OR an
-    // off-beat (fractional 0.5) shifted by exactly `swingOffsetSec`.
-    // For straight-feel seeds (swing 0.50) this collapses to "exact
-    // rhythm positions". Use seed 42 — T10 arpeggio with [8n, 8n, 8n,
-    // 4n] rhythm produces fragments with cursor positions at 0.5 and
-    // 1.5 (8n off-beats), so swing should be observable in the gaps.
+  it('emitted note times sit on expected rhythm positions ± swing + jitter', () => {
+    // Property: every emitted note time `t` lands on an exact
+    // germ-rhythm position, plus an optional swing offset on 8n
+    // off-beats, plus the per-emission ±7ms jitter. Tolerance is the
+    // jitter range plus a small epsilon. Use seed 42 — T10 arpeggio
+    // (cursor positions 0, 0.5, 1.0, 1.5) exercises both on-beat and
+    // 8n off-beat positions.
     const s = new MelodyScheduler(Seed.from(42n), makeState({ chordActivity: 0 }));
     const events = s.scheduleUntil(0, 120);
     const bpm = 74;
     const spq = 60 / bpm;
     const swingOffsetSec = (s.swingRatio - 0.5) * 0.5 * spq;
+    // ±7 ms jitter expressed in beat-fraction units, plus epsilon.
+    const jitterBeats = 0.007 / spq + 1e-6;
     expect(events.length).toBeGreaterThan(0);
     for (const ev of events) {
       const t = (ev as { time: number }).time;
       const beats = t / spq;
       const frac = beats - Math.floor(beats);
-      // Either an on-beat / known rhythm position, or an 8n off-beat
-      // shifted by swingOffsetSec. The shifted off-beat position is
-      // `0.5 + swingOffsetSec / spq` in beats.
       const shiftedOffbeat = 0.5 + swingOffsetSec / spq;
-      // Acceptable fractional positions:
-      //   0          (on-beat, fragment start or every-quarter rhythm)
-      //   0.25, 0.75 (16n if it ever shows up — diminished germ)
-      //   1/3, 2/3   (triplets — T7)
-      //   shiftedOffbeat (swung 8n off-beat)
       const tolerable = [0, 0.25, 0.5, 0.75, 1 / 3, 2 / 3, shiftedOffbeat];
-      const ok = tolerable.some((p) => Math.abs(frac - p) < 1e-6 || Math.abs(frac - p - 1) < 1e-6);
+      const ok = tolerable.some(
+        (p) => Math.abs(frac - p) < jitterBeats || Math.abs(frac - p - 1) < jitterBeats,
+      );
       expect(ok, `event at t=${t} → fractional beat ${frac}`).toBe(true);
     }
+  });
+
+  it('per-emission jitter shifts notes by up to ±7 ms from un-jittered positions', () => {
+    // Same seed instantiated twice; jitter is deterministic so both
+    // produce identical times. To verify jitter is *applied*, compare
+    // emitted positions against the exact-rhythm grid: at least some
+    // notes should land off the grid by > 0 but ≤ 7 ms (within
+    // floating-point tolerance).
+    const s = new MelodyScheduler(Seed.from(42n), makeState({ chordActivity: 0 }));
+    const events = s.scheduleUntil(0, 60);
+    const bpm = 74;
+    const spq = 60 / bpm;
+    const swingOffsetSec = (s.swingRatio - 0.5) * 0.5 * spq;
+    let maxOffsetMs = 0;
+    for (const ev of events) {
+      const t = (ev as { time: number }).time;
+      const beats = t / spq;
+      const frac = beats - Math.floor(beats);
+      const shiftedOffbeat = 0.5 + swingOffsetSec / spq;
+      const grid = [0, 0.25, 0.5, 0.75, 1 / 3, 2 / 3, shiftedOffbeat];
+      let nearestOffsetSec = Number.POSITIVE_INFINITY;
+      for (const p of grid) {
+        const d = Math.min(Math.abs(frac - p), Math.abs(frac - p - 1));
+        const offsetSec = d * spq;
+        if (offsetSec < nearestOffsetSec) nearestOffsetSec = offsetSec;
+      }
+      const offsetMs = nearestOffsetSec * 1000;
+      if (offsetMs > maxOffsetMs) maxOffsetMs = offsetMs;
+    }
+    // Some emission must have nonzero jitter (the rng draws a uniform
+    // ±7 ms; over many emissions the max should approach but not
+    // exceed 7 ms).
+    expect(maxOffsetMs).toBeGreaterThan(0.5);
+    expect(maxOffsetMs).toBeLessThanOrEqual(7 + 1e-6);
   });
 
   it('with chord activity at 0 and seed-typical activity, fires fragments regularly', () => {
