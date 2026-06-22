@@ -108,6 +108,7 @@ combinatorial variety).
 | [`docs/dynamics.md`](docs/dynamics.md) | fBm + ParamStream foundation; per-seed liveliness |
 | [`docs/event-protocol.md`](docs/event-protocol.md) | Typed event interface across the core/adapter split |
 | [`docs/adapter.md`](docs/adapter.md) | Tone.js audio chain |
+| [`docs/web-demo.md`](docs/web-demo.md) | Hosted demo URL, deploy workflow, iteration loop, site task list |
 | [`docs/lofi-study.md`](docs/lofi-study.md) | Music-theory survey — modes, chords, drums, subgenres |
 | [`docs/ornaments.md`](docs/ornaments.md) | Point-process model for subtle salient events |
 | [`docs/stack.md`](docs/stack.md) | Tech stack, monorepo layout, dev setup |
