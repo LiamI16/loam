@@ -239,6 +239,17 @@ reset is a v2 break for any saved seed. Recorded:
   independently — preparation for melody rewrite. Fingerprint count
   stays at 113; first 6 event signatures change `rhodes` →
   `rhodes_chord` (string-level only).
+- 2026-06-22 (melody Commit G — swing): per-seed swing ratio drawn
+  from `uniform[0.50, 0.55]` at construction (fixed for the session)
+  via the new `melody-swing-config` seed child. Per `docs/melody.md`
+  F2: swing is a performance habit, not a creative free parameter, so
+  drift was rejected. Applied as a forward time-offset on 8n off-beat
+  melody notes only — fragment-start (always on a quarter boundary)
+  and notes at on-beat or triplet positions are untouched.
+  `offset = (swing − 0.5) · eighth-duration`; at BPM 74 a max-swing
+  seed adds ~20 ms, a tight-feeling seed adds ~0 ms. Fingerprint still
+  113 for seed 42 in [0, 5s); no other RNG state changes since the
+  swing draw lives on its own seed child.
 - 2026-06-21 (melody Commit F — compound 2-chain): Phase 2 complete.
   After the first transformation is applied (transform / buffer rule
   only — germ verbatim and fresh-note don't trigger compound), a

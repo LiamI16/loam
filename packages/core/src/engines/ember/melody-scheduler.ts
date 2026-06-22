@@ -125,6 +125,21 @@ const STRUCTURAL_PROXIMITY_BEATS = 0.5;
  * `docs/melody.md` F2 (mean ~0.143, max ~0.5). Stable for the session. */
 const COMPOUND_RATE_FACTOR = 0.5;
 
+/** Per-seed swing ratio. Drawn from `uniform[SWING_MIN, SWING_MAX]` at
+ * construction; fixed for the session per `docs/melody.md` F2 (swing
+ * is a performance habit, not a creative free parameter — drift would
+ * read as audible rhythm wobble). 0.50 = perfectly straight; 0.55 =
+ * matches the drum kit's 16n swing. The narrow range produces a
+ * meaningful per-seed character continuum ("tight" vs "pushed") while
+ * staying inside lofi-genre swing territory. */
+const SWING_RATIO_MIN = 0.5;
+const SWING_RATIO_MAX = 0.55;
+
+/** Tolerance for detecting 8n off-beat positions in beat-space. Germ
+ * durations are computed via simple multiplication so exact equality
+ * to 0.5 fractional is fine, but allow a tiny epsilon for safety. */
+const OFFBEAT_EPSILON = 1e-9;
+
 export class MelodyScheduler implements SubScheduler {
   private rng!: Rng;
   private emissionRng!: Rng;
@@ -151,6 +166,11 @@ export class MelodyScheduler implements SubScheduler {
   /** Per-seed compound-chain rate, fixed at construction. */
   private readonly pCompound: number;
   private compoundRng!: Rng;
+  /** Per-seed swing offset in seconds — added to 8n off-beat melody
+   * notes only. Zero on a perfectly-straight seed. */
+  private readonly swingOffsetSec: number;
+  /** Public for diagnostic tooling (`scripts/analyze-seed.ts`). */
+  readonly swingRatio: number;
 
   constructor(
     private readonly seed: Seed,
@@ -212,6 +232,15 @@ export class MelodyScheduler implements SubScheduler {
 
     this.pCompound =
       sampleBetaTwoFive(seed.child('melody-compound-config').rng()) * COMPOUND_RATE_FACTOR;
+
+    // Swing is sampled once per seed and reused for the whole session.
+    // The pre-computed offset is `(swing - 0.5) · eighth-duration` —
+    // see `applyNoteSwing` for the per-note dispatch.
+    this.swingRatio = seed
+      .child('melody-swing-config')
+      .rng()
+      .nextRange(SWING_RATIO_MIN, SWING_RATIO_MAX);
+    this.swingOffsetSec = (this.swingRatio - 0.5) * 0.5 * this.secondsPerBeat;
 
     this.reset();
   }
@@ -372,7 +401,14 @@ export class MelodyScheduler implements SubScheduler {
   private emitGerm(events: EngineEvent[], startTime: number, source: Germ): number {
     let cursorBeats = 0;
     for (const note of source) {
-      const noteTime = startTime + cursorBeats * this.secondsPerBeat;
+      // Swing nudges 8n off-beats forward by the per-seed offset.
+      // Fragment-start always lands on an integer beat (nextQuarter is
+      // integer-valued), so the fractional position is just
+      // cursorBeats mod 1. 8n off-beat ⇔ fractional == 0.5. Triplet
+      // positions (1/3, 2/3) are unaffected, as intended for T7.
+      const frac = cursorBeats - Math.floor(cursorBeats);
+      const swing = Math.abs(frac - 0.5) < OFFBEAT_EPSILON ? this.swingOffsetSec : 0;
+      const noteTime = startTime + cursorBeats * this.secondsPerBeat + swing;
       const pitch = this.pickGermPitch(note, noteTime);
       const durationMs = note.durationBeats * this.secondsPerBeat * 1000;
       const velocity = VEL_MIN + this.rng.nextFloat() * VEL_JITTER;

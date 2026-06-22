@@ -33,6 +33,7 @@ const melody = (
       template: { id: string; contour: string };
       activityStream: { evaluate(t: number): number };
       couplingStream: { evaluate(t: number): number };
+      swingRatio: number;
     };
   }
 ).melody;
@@ -42,6 +43,9 @@ const state = (
   }
 ).state;
 
+console.log(
+  `Swing ratio: ${melody.swingRatio.toFixed(4)} (offset ${((((melody.swingRatio - 0.5) * 0.5 * 60) / opts.bpm) * 1000).toFixed(1)} ms on 8n off-beats)`,
+);
 console.log(`Template: ${melody.template.id} (${melody.template.contour})`);
 console.log(`Germ length: ${melody.germ.length}`);
 for (const note of melody.germ) {
