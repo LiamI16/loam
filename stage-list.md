@@ -137,6 +137,13 @@ A (rhythm) and C (voicing variety) are done. Remaining:
     jazzier than calm lofi; might want to defer or scope tightly.
   - **Chromatic approach tones.** One voice slides chromatically at
     slot transition instead of jumping.
+  - **Melody-compat check first.** The melody germ is deliberately
+    *key-relative* per `docs/melody.md` F2 — justified by the current
+    chord vocabulary being pentatonic-friendly. Altered dominants
+    aren't. Resolve `docs/gaps.md` "Chord vocabulary D vs. germ
+    key-relativity" before committing this work; possible outcomes
+    range from "fresh-rule filter handles it" to "scope-limit Chord D"
+    to "revisit the F2 decision."
 
 **Design constraint — read first:** every per-seed parameter must
 follow the hybrid stack in
@@ -693,14 +700,6 @@ synth (replacing crackle's BELL reuse), `channels.ts`.
 ---
 
 ## Parked (revisit after this list is done)
-
-- **Theme-and-variations on an invisible germ.** Seed defines a tiny
-  musical germ (3-note shape + chord pair); everything generated is
-  a variation. Closer to how Beethoven's late quartets work than to
-  statistical methods. Would require real music-theory work
-  ("is this passage a variation of the germ?"). Considered during
-  Stage 7 planning (2026-06-16); the deepest coherence mechanism the
-  engine could have, but very large lift.
 
 - **Engine-driven warmth / engine-driven master volume.** Conflicts
   with user sliders on the same parameter (the density / warmth

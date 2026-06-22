@@ -68,6 +68,46 @@ source (`harmony/markov.ts` → `HAND_MATRIX`); when we mine corpora:
 
 ---
 
+## Melody / harmony interaction
+
+### Chord vocabulary D vs. germ key-relativity
+The melody rewrite (F2 sub-decision, `docs/melody.md` line 367+) chose
+**key-relative germs** — the germ floats over harmony rather than
+adapting per-chord — justified by the current chord vocabulary being
+pentatonic-friendly. The next planned harmony stage (Chord D) adds
+altered dominants (`7♯5`, `7♭5`, `7♭9`) whose chord tones include
+notes that *aren't* pentatonic-friendly.
+
+Open question: will key-relative germs clash audibly over altered
+dominants? Three resolution paths to consider when Chord D lands:
+
+1. The `fresh` rule's chord-aware filter handles it (germ emissions
+   are a minority of firings; clashes get masked by surrounding fresh
+   notes).
+2. The F2 key-relative decision needs revisiting for altered chords
+   specifically (per-chord-quality clash tolerance).
+3. Scope-limit Chord D to the chord qualities that don't clash with
+   pentatonic germs (drop the altered dominants).
+
+Decide before committing Chord D work.
+
+### Engine fingerprint test coverage hole
+The lock test asserts count `113` for `Seed.from(42n)` in `[0, 5s)`.
+By coincidence, seed 42 doesn't fire any melody notes in that window
+— so the lock has been stable across every melody-rewrite commit
+despite every seed's melody character changing substantially. The
+lock is incomplete by design (it's a tripwire, not a full contract),
+but the gap is worth knowing. If a future change *does* fire melody
+for seed 42 in `[0, 5s)`, the test will catch it correctly but the
+incident will look like a regression rather than a coverage update.
+
+Possible fixes (not urgent):
+- Add a second lock for a longer window (say 30 s)
+- Add a parallel lock for a seed whose melody fires early
+- Add a separate locked-sequence test specifically for melody firings
+
+---
+
 ## Content / design decisions still hanging
 
 ### Which subgenre archetypes ship in v1
