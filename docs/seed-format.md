@@ -239,6 +239,25 @@ reset is a v2 break for any saved seed. Recorded:
   independently — preparation for melody rewrite. Fingerprint count
   stays at 113; first 6 event signatures change `rhodes` →
   `rhodes_chord` (string-level only).
+- 2026-06-21 (melody Commit D — fragment emission + 4-way rule
+  + buffer): per-firing emission switches from single-note to
+  multi-note fragment. The 4-way decision (germ / transform / buffer
+  / fresh) is rolled at each fragment-start opportunity from per-seed
+  Dirichlet-perturbed weights `[0.35, 0.30, 0.20, 0.15]`. In this
+  commit `transform` and `buffer` fall back to germ verbatim — they
+  light up in Commit E with the transformation library. `fresh`
+  emits a single chord-aware pitch via the pre-Commit-C clash-filter
+  helper. A rolling buffer (per-seed size `[4, 12]`) accumulates
+  emitted notes for E to consume. Adds seed children
+  `melody-emission`, `melody-emission-config`, `melody-buffer-config`.
+  Determinism discipline shifts: per-firing now always-consumes
+  `fireRoll` + `ruleRoll`; per-note velocity rolls are confined to
+  the fire branch (fragment length varies, so they can't be
+  pre-rolled uniformly). Engine fingerprint count holds at 113 for
+  `Seed.from(42n)` at `bpm: 74` in [0, 5s) — coincidence: seed 42
+  doesn't fire melody in this window under either scheme. Every seed's
+  emission scheme has fundamentally shifted; the lock test happens to
+  not catch it (incomplete by design — see Commit C entry).
 - 2026-06-21 (melody Commit C — germ + min-cap coupling): melody
   scheduler rewritten from a density-driven pentatonic Bernoulli to a
   germ-driven scheduler gated by the F1 min-cap chord-melody coupling
