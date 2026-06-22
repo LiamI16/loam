@@ -115,4 +115,89 @@ Liam's checklist for the site itself. Engine-side work belongs in
 `docs/user-feedback-features.md`. This section is for *site*-level
 things — hosting, UX, deploy, copy.
 
-- [ ] (add tasks here)
+### 1. Copy button copies the shareable link, not the seed integer
+
+The seed-copy affordance currently puts the bare integer on the
+clipboard. Users want to paste a *playable link* into chat / email —
+the integer alone forces the recipient to also know the demo URL +
+how to apply the seed.
+
+**Implementation:** the copy handler should produce
+`https://liami16.github.io/loam/?seed=<value>` (or whatever query-
+param the demo already uses on load — verify the loader respects
+this; might need to add it). One-line change inside the existing
+copy handler in `apps/web-demo/src/main.ts`. Falls under the
+"user-feedback-features.md → Copy Link" item — moved here because
+it's site-level UX, not an engine feature.
+
+**Files:** `apps/web-demo/src/main.ts`, possibly an init-from-URL
+read at engine construction.
+
+---
+
+### 2. Per-seed feedback / review box
+
+Users hear a seed, want to leave a note ("this one is great", "this
+one is too busy", "love the swing"). Two pragmatic paths — both
+work without a backend:
+
+**Option A — GitHub Issues link button.** A button on the demo opens
+a pre-filled GitHub issue via URL parameter:
+`https://github.com/LiamI16/loam/issues/new?title=Feedback%20on%20seed%20<value>&labels=seed-feedback&body=<auto-template>`.
+Body auto-fills with the seed, BPM, swing ratio, template ID
+(pulled from `engine.melody.swingRatio` etc.). Zero backend; uses
+GitHub's free issue store as the database. Tradeoff: requires the
+reviewer to have a GitHub account.
+
+**Option B — Embedded form.** Google Form / Tally / Typeform with
+a seed-prefill via URL parameter. No login required by the reviewer.
+Tradeoff: third-party dependency, less integrated.
+
+**Recommendation:** Option A first — it's free, native to the repo,
+and the feedback shows up in the same place as bug reports.
+Switch to Option B if low-friction-for-non-devs becomes a goal.
+
+**Files:** new button in `apps/web-demo/index.html` + handler in
+`main.ts` that constructs the issue URL with current seed/parameters.
+
+---
+
+### 3. Donation button
+
+Per the README's "MIT, permissively licensed" framing — donations
+are explicitly secondary, modeled as a trickle. The button is the
+acknowledgement-of-effort surface for users who want to.
+
+**Platforms (mutually compatible — can list multiple):**
+
+- **GitHub Sponsors** — native; requires applying for Sponsors
+  eligibility (a couple-day approval flow). Lowest friction once
+  approved; GitHub displays a "Sponsor" button at the top of the
+  repo automatically.
+- **Ko-fi** — instant signup, no approval needed. One-time tips +
+  optional monthly. ~5% platform cut.
+- **Buy Me a Coffee** — same shape as Ko-fi.
+
+**One-click integration via `FUNDING.yml`:** create
+`.github/FUNDING.yml` listing whichever platforms are set up:
+
+```yaml
+github: [LiamI16]      # only if Sponsors approved
+ko_fi: <handle>
+buy_me_a_coffee: <handle>
+```
+
+GitHub then renders a "Sponsor" button at the top of the repo page
+for free. The demo can additionally surface a heart / coffee icon
+that links to the same destinations.
+
+**Action items to unblock this:**
+1. Decide which platform(s) — Ko-fi is the fastest path; Sponsors is
+   the most "indie OSS native."
+2. Create the account(s) and configure.
+3. Add `.github/FUNDING.yml`.
+4. Add a discreet icon in the demo footer linking out.
+
+**Files:** `.github/FUNDING.yml`, `apps/web-demo/index.html` (footer
+icon), `apps/web-demo/src/main.ts` (or just a plain `<a>` — no JS
+needed).
