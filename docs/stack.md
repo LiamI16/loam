@@ -34,7 +34,7 @@ loam/
   be versioned independently.
 - The dependency direction is enforced: `synth-tone` and `obsidian` can
   import `@loam/core`, but `core` can't accidentally reach into them. This
-  matters because the core/adapter split from `handoff.md` is meaningless
+  matters because the core/adapter split (see `README.md`) is meaningless
   if anything in core can import Tone.js.
 - For an open-source project this is the layout outside contributors expect.
 - The existing single-file prototype (`ember-generative-study.html`) lives
@@ -66,7 +66,7 @@ Three layers, bottom to top:
 **For Loam:** Tone.js sits *only* inside `packages/synth-tone`. `@loam/core`
 doesn't know it exists — it emits abstract events ("play note B4 velocity
 0.6 in 250 ms") and the adapter translates them into Tone.js calls. That
-split is the whole architectural bet from `handoff.md` and the reason the
+split is the whole architectural bet (see `README.md`) and the reason the
 engine is portable (could swap Tone.js for Faust, raw Web Audio, or a
 native audio backend later without touching core).
 

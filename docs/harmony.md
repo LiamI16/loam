@@ -120,34 +120,46 @@ Approximations vs an exact L1-optimal assignment:
 ## 5. Engine wiring
 
 `EngineState` gained `currentChord: ChordSymbol | null` (Stage 6).
-`ChordScheduler` writes it on every emission. `MelodyScheduler` reads
-it for its filter (§6).
+`ChordScheduler` writes it on every emission. `ChordScheduler` also
+exposes its `activityStream` via `EngineState.chordActivityStream` so
+`MelodyScheduler` can evaluate chord activity at per-emission
+resolution for its F1 min-cap coupling formula (see `docs/melody.md`).
+Slot-boundary times are pushed onto `EngineState.structuralMomentTimes`
+for the melody scheduler's retrograde gating.
 
-Two seed children consumed by `ChordScheduler`:
+Three seed children consumed by `ChordScheduler` (plus several more
+for archetypes, patterns, slot bias, activity — see the file header):
 
-- `chords.child('markov-config')` — Dirichlet perturbation. One draw
-  at engine construction.
+- `chords.child('markov-config')` — Dirichlet perturbation of
+  `HAND_MATRIX`. One draw at engine construction.
 - `chords.child('markov-walk')` — per-step walk decisions.
+- `chords.child('voicing-register-config')` — per-seed register
+  centerpoint.
 
 A new chord (and rerolled engine) doesn't perturb the rest of the
-engine state — `density-fbm`, `evofilter-fbm`, drums, crackle, melody
-all pull from their own `seed.child(...)` siblings.
+engine state — `evofilter-fbm`, drums, crackle, melody all pull from
+their own `seed.child(...)` siblings.
 
-## 6. Melody filter (WIP — Stage 9 revisit)
+## 6. Melody / chord interaction
 
-`MelodyScheduler` filters its A-minor pentatonic bag against
-`state.currentChord`: drops any pentatonic pitch class that is a
-half-step above or below any chord tone (the worst clashes the wider
-Stage-6 harmony introduces — e.g. natural E pentatonic over `Fm6`
-containing E♭).
+The pre-melody-rewrite melody scheduler filtered an A-minor pentatonic
+bag against `state.currentChord` on every emission — a guardrail
+against the worst half-step clashes the wider Stage-6 harmony
+introduced (e.g. natural E pentatonic over `Fm6` containing E♭).
 
-If the filter empties, falls back to a chord tone projected into the
-pentatonic's register (A4–C6).
+The melody rewrite (2026-06-21, Phases 1–3) replaced this with a
+germ-driven scheduler. The germ floats key-relative over the harmony
+per `docs/melody.md` §F2 — for the engine's mostly-pentatonic chord
+vocabulary, the audible difference between chord-relative and
+key-relative is small.
 
-**This is a guardrail, not a real chord-aware melody.** Stage 9's
-L-system melody will subsume it with a proper pitch-selection model
-that knows scale + chord + phrase contour. Documented here so the
-half-fix is intentional, not forgotten.
+The chord-aware clash filter wasn't deleted, just scoped: it lives
+inside the `fresh` rule of the new 4-way emission decision
+(`MelodyScheduler.pickFreshPitch`), where a single chord-aware pitch
+is picked instead of a germ-derived multi-note fragment. Germ-derived
+emissions deliberately don't filter; the F2 sub-decision accepts
+occasional dissonance as the price of preserving germ identity across
+chord changes.
 
 ## 7. Multi-layered determinism contracts (additions)
 
@@ -167,22 +179,33 @@ Markov starting chord (`Am7`) voiced at C–E–G–A instead of the old
 `Fmaj7` static pick. Treat any future change to these contracts as a
 v2 seed-format break.
 
-## 8. What's intentionally NOT in Stage 6
+## 8. What's landed since Stage 6, what's still out
 
-- **Key/mode knobs.** Still C major / A minor only. Modal/key
-  selection is a future stage; the pc + intervals representation
-  doesn't block it.
-- **Bass scheduler.** Pad still does root + 5 in the bass register
-  (computed from `chord.rootPc + 36`); no walking bass, no
-  groove-aware bassline.
-- **Real chord-aware melody.** §6 is a guardrail. Stage 9.
-- **Voicing variation.** No drop-2/drop-3, no chromatic approach
-  tones. (Per-cycle voicing wobble — single inner-voice octave-up
-  embellishment at bar 1 of a held chord — *is* implemented as of
-  the post-Stage-6 follow-up; see `ChordScheduler` `WOBBLE_PROBABILITY`.)
+Tracking what was deferred at Stage 6 and is now in the engine versus
+still pending (see `stage-list.md` for the active backlog):
+
+- **Bass scheduler** — done. Separate `BassScheduler` with per-seed
+  stickiness (some seeds anchor pedal-tone, others move with chords).
+- **Voicing variation** — done. Four archetypes (close / spread /
+  rootless / quartal) per-slot via Dirichlet-perturbed weights;
+  drop-a-voice micro-variation; rootless-preview pickups.
+- **Comping rhythm + pattern menu** — done. Bar-grid scheduler with
+  five comping patterns selected by Markov walk; per-slot activity-
+  stream-tilted Dirichlet.
+- **Chord-aware melody** — partly done. The melody rewrite (see §6)
+  lifts the half-step filter into the `fresh` rule of a germ-driven
+  scheduler. Full chord-relative germs (the F2 "discarded option") were
+  deliberately deferred — for our chord vocabulary the audible win was
+  small.
+- **Position-driven mode blending** — done (Stage 7c.2). The
+  `PositionStream` selects a blended weighting across modes-of-C; the
+  Markov walk inherits the blended chord-occurrence weights.
+- **Key/mode knobs (user-facing).** Still locked to C major / Aeolian-
+  family. The pc + intervals representation doesn't block transposition
+  but no UI knob exposes it.
 - **Lorenz-biased matrix.** The Dirichlet perturbation is constant for
-  the session. Stage 7 lets a Lorenz attractor reweight transition
-  probabilities in slow motion.
+  the session — `PositionStream` is the existing slow-drift substrate;
+  Lorenz specifically would only be additive variety.
 - **Python corpus mining.** The hand-tuned matrix is the single source
   of truth. Mining TheoryTab or similar is deferred until vocabulary
-  grows beyond what's hand-tunable (Stage 7+).
+  grows beyond what's hand-tunable.

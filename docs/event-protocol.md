@@ -1,6 +1,6 @@
 # Engine ↔ Adapter event protocol
 
-> The interface across the core/adapter split from `docs/handoff.md`.
+> The interface across the core/adapter split (see `README.md`).
 > `@loam/core` emits typed events; the synth adapter (`packages/synth-tone`)
 > consumes them and renders sound. Core knows nothing about Tone.js or Web
 > Audio; the adapter knows nothing about music theory or generation.

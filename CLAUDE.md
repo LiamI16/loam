@@ -16,8 +16,8 @@ plugin, sharing one engine.
 - **`stage-list.md`** — active development checklist. **Check first.**
   Done items in the summary table at top; remaining work in
   impact-ordered backlog.
-- **`docs/handoff.md`** — canonical project context (design principles,
-  v1 spec, architecture, strategy).
+- **`README.md`** — project description, design philosophy, v1 scope,
+  generation architecture. The "what this is + why" doc.
 - **`docs/seed-format.md`** — seed contract + locked-sequence layers
   (the seed-format compatibility surface).
 - **`docs/seed-identity.md`** — load-bearing design principle for

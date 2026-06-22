@@ -8,10 +8,8 @@
 
 ## Blockers / contradictions — resolve before code
 
-*(All three previously-blocking items resolved 2026-06-15. See
-`docs/seed-format.md`, `docs/event-protocol.md`, and the rewritten
-`handoff.md` §Known gaps bullet 2. Move new blockers in here as they
-appear.)*
+*(All previously-blocking items resolved by 2026-06-22. New blockers go
+here as they appear.)*
 
 ---
 
@@ -24,16 +22,25 @@ Determinism implications of each choice.
 
 ### State serialization
 For exact pause/resume and for the seed-determinism promise to mean
-anything, enumerate the persistent state:
-- Attractor coordinates (3 floats per attractor)
-- Markov current-state per chain
-- Ornament per-type recovery clocks + global last-fired
-- fBm phases per channel
-- Current chord, voicing, progression slot
-- Any LFSR/PRNG counters
+anything, enumerate the persistent state. As of 2026-06-22 the
+sub-schedulers carry:
+
+- `EmberEngine`: `engineCursor`, `audioCursor`, `speedMultiplier`
+- `ChordScheduler`: walk state, `nextBarIdx`, `currentSlotStartBar`,
+  current chord/voicing/archetype/pattern + plan, pre-stepped next-slot
+  lookahead, `prevPadRoot`, `previousPattern`
+- `BassScheduler`: stickiness state, last bass pitch
+- `DrumScheduler`: per-bar variation flag state
+- `MelodyScheduler`: `nextQuarter`, `buffer`, four rng cursor positions
+  (root, emission, transformation, transformation-param, compound,
+  jitter), `pCompound` + swing ratio (immutable post-construction)
+- `CrackleScheduler`: per-event state
+- `PositionStream` phase
+- All `FbmParam` streams (mean is mutable; offsets implicit from time)
 
 Decide whether the engine snapshots state for save/resume or restarts from
-seed + elapsed-time (re-derivable for OU/fBm but expensive for long sessions).
+seed + elapsed-time (re-derivable from seed in most cases, but expensive
+for long sessions).
 
 ### Validation harness
 Mentioned in `dynamics-brainstorm.md` and `ornaments.md` as a Python offline
@@ -45,18 +52,15 @@ tool. Needs:
   long-run stationarity, type non-clustering
 - Lives in `tools/` per the spec's Python-at-build-time rule
 
-### Voice-leading solver
-`dynamics-brainstorm.md` §4.2 hand-waves "minimum-motion voicing solver."
-Needs:
-- Allowed inversions and doublings
-- Range constraints per voice
-- Cost function (total semitone motion? weighted by voice? avoid voice
-  crossing?)
-- How chromatic-approach probability and archetype swap interact with the
-  solver
+`packages/core/scripts/render-snippet.ts` and
+`packages/core/scripts/analyze-seed.ts` cover the dev-time ear-fatigue
+problem; a Python harness for the *statistical* properties is still
+pending.
 
 ### Markov matrix schema
-"Python authors, TS performs" pattern is stated; no schema for the artifact.
+"Python authors, TS performs" pattern is stated; no schema for the
+build-time artifact. The chord-Markov matrix is currently hand-tuned in
+source (`harmony/markov.ts` → `HAND_MATRIX`); when we mine corpora:
 - JSON shape (probably `{from: {to: probability, ...}, ...}`)
 - Per-mode? Per-archetype? Per-subgenre?
 - Versioning so old seeds keep working when matrices update
@@ -72,15 +76,23 @@ v1. Each archetype is a *preset* over the ~50 knobs; defining them is the
 single biggest authoring task.
 
 ### User-facing knob surface
-~50 knobs internally; UI exposes 3 today (volume / warmth / density) plus
-two toggles (rain / vinyl). `ornaments.md` §5 added a "presence" slider.
-Which subset becomes user-controlled vs purely seed-implicit? The whole UX
-identity ("zero selection" vs "a few warm dials") depends on this answer.
+The 2026-06-22 cleanup hardened the seed-as-identity principle:
+user-facing knobs are deliberately limited to playback-level controls
+(volume / warmth / speed multiplier) plus feature toggles
+(rain / vinyl). All musical-character knobs (BPM, density, swing,
+template choice, coupling) are derived from the seed. See
+`docs/seed-identity.md` and the seed-discovery backlog entry in
+`stage-list.md` for the principled answer to "user wants a different
+mood."
+
+Still open: does the Obsidian plugin expose anything more than the
+web demo, or are they identical?
 
 ### Macro vs session-locked
 Open in `dynamics-brainstorm.md` §8 — do macro knobs themselves drift over a
-session, or stay seed-locked? Affects the HMM design and the
-seed-determinism promise.
+session, or stay seed-locked? Resolved for most layers: chord/melody
+activity, coupling, slot bias all drift. Swing and compound rate are
+session-locked (rare-event carve-out per `docs/seed-identity.md`).
 
 ### Bit-exact determinism scope
 Also from `dynamics-brainstorm.md` §8: bit-exact across machines (constrains
@@ -99,33 +111,34 @@ same character." Probably the latter for v1, but worth deciding explicitly.
 - Mobile Obsidian story (or explicit "desktop only" decision)
 
 ### Note-to-seed mapping
-The "thematic to note" idea from `handoff.md` growth space — every note gets
-its own deterministic soundscape. Needs design:
+The "thematic to note" idea from the growth-space discussion — every note
+gets its own deterministic soundscape. Needs design:
 - Hash over title / content / tags / frontmatter / path?
 - Stability under edits (small text change shouldn't cause a totally
   different seed — or should it? UX choice)
 - Override / pin mechanism so a user can lock a seed they like
 
 ### Prototype → modular codebase migration
-Does the existing `ember-generative-study.html` become the hosted demo
-as-is, get rewritten on top of `@loam/core`, or both in parallel during the
-transition? Affects how quickly we can publish a public demo.
+The existing `ember-generative-study.html` is kept as a reference specimen
+alongside the modular codebase. Decision is now made (both in parallel);
+no migration step pending.
 
 ### Bundle Tone.js locally
-Listed as a step in handoff but no notes on:
-- Size budget (Tone.js is ~200 KB minified; matters for the single-HTML demo)
-- Tree-shaking — do we use enough of Tone.js to justify the full bundle, or
-  cherry-pick?
-- How the bundled demo stays "single self-contained HTML" if we keep that
-  property
+Tone.js is currently a workspace dependency, bundled by Vite for the web
+demo. Specific budget items still open:
+- Size budget on the demo bundle (we're at ~300 KB minified currently)
+- Tree-shaking effectiveness — do we use enough of Tone.js to justify
+  the full bundle, or cherry-pick?
+- How the bundled demo stays "single self-contained HTML" if we keep
+  that property
 
 ---
 
 ## Engineering hygiene
 
 ### License file
-MIT is declared in `handoff.md`; no `LICENSE` file in the repo. Trivial to
-add.
+MIT is declared in `README.md`; verify a `LICENSE` file exists at the
+repo root.
 
 ### Performance budget
 No target stated. Needs:
@@ -152,13 +165,14 @@ No target stated. Needs:
 ## Long-tail — flagged for later
 
 ### Devlog / writeup
-`handoff.md` calls the writeup the highest-leverage deliverable. No outline
-yet. Even a one-page draft (sections + bullets) would be useful as a north
-star for what the engine needs to demonstrate.
+The architecture devlog (mentioned in `README.md`) is the highest-leverage
+deliverable. No outline yet. Even a one-page draft (sections + bullets)
+would be useful as a north star for what the engine needs to demonstrate.
 
 ### Roadmap with milestones
-`handoff.md` lists 6 "Immediate next steps" but no sequence, dependencies, or
-definition-of-done per step. A Gantt-flavored ordering would help triage.
+`stage-list.md` has the active backlog but no Gantt-flavored ordering or
+definition-of-done per item. A roadmap pass would help triage what's
+shippable for the v1 demo.
 
 ### Circadian rate modulation
 From `ornaments.md` §7 still-open — "quieter at midnight." Skip for v1,
@@ -167,3 +181,14 @@ revisit if users ask.
 ### Are some ornament types too salient to ever ship by default
 From `ornaments.md` §7 still-open. The bell-tone is the suspect. Decide once
 we can hear long sessions.
+
+---
+
+## Recently resolved (delete after a few sessions)
+
+- **Voice-leading solver design** (Stage 6) — done. See
+  `harmony/voicing.ts`.
+- **Density slider's role in user-facing knob surface** (2026-06-22) —
+  density removed; principle clarified.
+- **L-system melody contour** — superseded by the germ-driven melody
+  rewrite (Phases 1–3). See `docs/melody.md`.

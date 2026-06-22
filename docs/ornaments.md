@@ -1,7 +1,8 @@
 # Ornaments — rate, refractory, and distribution
 
-> A revision of the strict "never produce a salient moment" rule from
-> `handoff.md` and `dynamics-brainstorm.md`. Pure featurelessness tips past
+> A revision of the strict "never produce a salient moment" rule
+> (see `README.md`'s cardinal-rule framing and `dynamics-brainstorm.md`).
+> Pure featurelessness tips past
 > *unobtrusive* into *soporific* — losing the listener as surely as a hook
 > would. The fix is a thin layer of subtle ornaments, statistically governed
 > so they never form a pattern, never cluster, and never deplete.
