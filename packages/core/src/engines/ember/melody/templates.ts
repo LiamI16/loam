@@ -37,15 +37,23 @@ export type ContourArchetype =
   | 'rocking'
   | 'arpeggio';
 
-export type IntervalBias = 'stepwise' | 'step-with-leap' | 'leap-then-resolve';
-
-export type TerminationType =
-  | 'resolve-to-root'
-  | 'resolve-to-third'
-  | 'hang-on-extension'
-  | 'sustain';
-
-export type StartConstraint = 'chord-tone-only' | 'any-pentatonic';
+/** Interval-size bias for the contour generator's `stepSize()` helper.
+ * `step-with-leap` occasionally widens to two scale degrees; `stepwise`
+ * is always 1. T4 and T8 don't use this — their leap shape comes from
+ * dedicated contour `case` blocks, not from interval-bias dispatch.
+ *
+ * NOTE — partial implementation: bias is **template-locked**, not
+ * per-seed. `docs/melody.md` §F2 (line 311) lists "Pick interval-size
+ * bias (some seeds tighter, some wider)" as a per-seed germ-generation
+ * step, but the v1 implementation locks bias to each template's
+ * default. Promoting bias to a per-seed dimension would need a new
+ * `melody-interval-bias-config` seed child + a per-seed override; the
+ * `IntervalBias` type was deliberately left structured (rather than
+ * inlined into the contour cases) so that promotion stays cheap.
+ * The original `'leap-then-resolve'` enum value was removed because
+ * it was dead (T4/T8's leaps live in the contour `case` blocks); add
+ * it back if a per-seed lean-into-leap dimension lands. */
+export type IntervalBias = 'stepwise' | 'step-with-leap';
 
 export type TemplateId = 'T1' | 'T2' | 'T3' | 'T4' | 'T5' | 'T6' | 'T7' | 'T8' | 'T9' | 'T10';
 
@@ -68,8 +76,6 @@ export interface Template {
   readonly noteCount: { readonly min: number; readonly max: number };
   readonly defaultRhythmCell: readonly NoteDuration[];
   readonly intervalBias: IntervalBias;
-  readonly terminationType: TerminationType;
-  readonly startConstraint: StartConstraint;
 }
 
 export const TEMPLATES: Readonly<Record<TemplateId, Template>> = {
@@ -79,8 +85,6 @@ export const TEMPLATES: Readonly<Record<TemplateId, Template>> = {
     noteCount: { min: 4, max: 4 },
     defaultRhythmCell: ['8n', '8n', '4n', '2n'],
     intervalBias: 'stepwise',
-    terminationType: 'resolve-to-root',
-    startConstraint: 'chord-tone-only',
   },
   T2: {
     id: 'T2',
@@ -88,8 +92,6 @@ export const TEMPLATES: Readonly<Record<TemplateId, Template>> = {
     noteCount: { min: 4, max: 5 },
     defaultRhythmCell: ['4n', '8n', '8n', '8n', '4n'],
     intervalBias: 'stepwise',
-    terminationType: 'resolve-to-root',
-    startConstraint: 'any-pentatonic',
   },
   T3: {
     id: 'T3',
@@ -97,17 +99,13 @@ export const TEMPLATES: Readonly<Record<TemplateId, Template>> = {
     noteCount: { min: 3, max: 3 },
     defaultRhythmCell: ['4n', '4n', '2n'],
     intervalBias: 'stepwise',
-    terminationType: 'resolve-to-third',
-    startConstraint: 'chord-tone-only',
   },
   T4: {
     id: 'T4',
     contour: 'leap-and-step',
     noteCount: { min: 4, max: 4 },
     defaultRhythmCell: ['4n', '8n', '8n', '2n'],
-    intervalBias: 'leap-then-resolve',
-    terminationType: 'resolve-to-third',
-    startConstraint: 'chord-tone-only',
+    intervalBias: 'stepwise',
   },
   T5: {
     id: 'T5',
@@ -115,8 +113,6 @@ export const TEMPLATES: Readonly<Record<TemplateId, Template>> = {
     noteCount: { min: 3, max: 4 },
     defaultRhythmCell: ['1n', '8n', '8n', '4n'],
     intervalBias: 'stepwise',
-    terminationType: 'sustain',
-    startConstraint: 'chord-tone-only',
   },
   T6: {
     id: 'T6',
@@ -124,8 +120,6 @@ export const TEMPLATES: Readonly<Record<TemplateId, Template>> = {
     noteCount: { min: 5, max: 5 },
     defaultRhythmCell: ['8n', '8n', '4n', '8n', '8n'],
     intervalBias: 'stepwise',
-    terminationType: 'resolve-to-root',
-    startConstraint: 'chord-tone-only',
   },
   T7: {
     id: 'T7',
@@ -133,17 +127,13 @@ export const TEMPLATES: Readonly<Record<TemplateId, Template>> = {
     noteCount: { min: 5, max: 7 },
     defaultRhythmCell: ['8t', '8t', '8t', '4n', '4n'],
     intervalBias: 'stepwise',
-    terminationType: 'hang-on-extension',
-    startConstraint: 'any-pentatonic',
   },
   T8: {
     id: 'T8',
     contour: 'wide-leap-sustain',
     noteCount: { min: 3, max: 4 },
     defaultRhythmCell: ['8n', '1n', '8n', '4n'],
-    intervalBias: 'leap-then-resolve',
-    terminationType: 'sustain',
-    startConstraint: 'chord-tone-only',
+    intervalBias: 'stepwise',
   },
   T9: {
     id: 'T9',
@@ -151,8 +141,6 @@ export const TEMPLATES: Readonly<Record<TemplateId, Template>> = {
     noteCount: { min: 4, max: 5 },
     defaultRhythmCell: ['4n', '4n', '4n', '4n'],
     intervalBias: 'stepwise',
-    terminationType: 'resolve-to-root',
-    startConstraint: 'chord-tone-only',
   },
   T10: {
     id: 'T10',
@@ -160,8 +148,6 @@ export const TEMPLATES: Readonly<Record<TemplateId, Template>> = {
     noteCount: { min: 3, max: 4 },
     defaultRhythmCell: ['8n', '8n', '8n', '4n'],
     intervalBias: 'step-with-leap',
-    terminationType: 'hang-on-extension',
-    startConstraint: 'chord-tone-only',
   },
 };
 
@@ -221,9 +207,7 @@ function contourOffsets(
   rng: Rng,
 ): number[] {
   const stepSize = (): number => {
-    if (bias === 'stepwise') return 1;
     if (bias === 'step-with-leap') return rng.bernoulli(0.3) ? 2 : 1;
-    // leap-then-resolve: first interval larger, rest stepwise
     return 1;
   };
   const out: number[] = [];

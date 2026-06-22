@@ -420,14 +420,29 @@ categorical.
 Calm-core (T1–T6 + T9) = ~83%; Ghibli flavor (T7–T8) = 11%;
 arpeggio (T10) = 6%.
 
-**Each template specifies (full spec at implementation time):**
+**Each template specifies (v1 implementation):**
 - Contour archetype
 - Note count range
 - Default rhythm cell (referencing the rhythm library — open #4)
-- Interval bias (stepwise / step-with-leap / leap-then-resolve)
-- Termination type (resolve-to-root / resolve-to-third /
-  hang-on-extension / sustain)
-- Starting position constraint (chord-tone-only / any pentatonic)
+- Interval bias (`stepwise` / `step-with-leap`) — see "Implementation
+  audit (2026-06-22)" below
+
+> **Implementation audit (2026-06-22).** The original spec also listed
+> *Termination type* (`resolve-to-root` / `-third` / `hang-on-extension`
+> / `sustain`) and *Starting position constraint* (`chord-tone-only`
+> / `any-pentatonic`) per template, plus a third interval bias value
+> `leap-then-resolve`. All three were initially populated on the
+> `Template` interface but never read by any code — `terminationType`
+> would have shaped contour endings, `startConstraint` would have
+> required chord context at germ-generation time (which conflicts with
+> F2's "germ is key-relative, floats over harmony" decision), and
+> `leap-then-resolve` was redundant with T4/T8's contour-specific
+> `case` blocks. Removed from the type to match what the code actually
+> does. If a future identity expansion wants per-seed contour
+> termination, add the field back when wiring the enforcement logic.
+> Interval bias is also currently **template-locked**, not per-seed —
+> see the inline note on `IntervalBias` in `templates.ts` for the
+> promotion path if that becomes a per-seed identity dimension.
 
 ### Transformation menu — six normal + one gated (decided 2026-06-21)
 

@@ -6,14 +6,12 @@ export {
   generateGerm,
   type IntervalBias,
   type NoteDuration,
-  type StartConstraint,
   TEMPLATE_BASE_WEIGHTS,
   TEMPLATE_DIRICHLET_ALPHA,
   TEMPLATE_IDS,
   TEMPLATES,
   type Template,
   type TemplateId,
-  type TerminationType,
 } from './templates.js';
 export {
   pickCompoundSecond,
