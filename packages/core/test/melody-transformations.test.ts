@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  pickCompoundSecond,
   RETROGRADE_STRUCTURAL_WEIGHT,
   STRUCTURAL_TRANSFORMATIONS,
+  sampleBetaTwoFive,
   structuralWeights,
   TRANSFORMATION_BASE_WEIGHTS,
   TRANSFORMATIONS,
@@ -129,5 +131,67 @@ describe('melody transformations', () => {
     const a = transformGerm('transpose', sampleGerm, Seed.from(99n).rng());
     const b = transformGerm('transpose', sampleGerm, Seed.from(99n).rng());
     expect(b).toEqual(a);
+  });
+
+  it('pickCompoundSecond never returns the excluded kind', () => {
+    // Sweep many rolls across many exclusions; assert exclusion always
+    // holds. With Dirichlet α=20 the weight redistribution is mild.
+    const rng = Seed.from(1n).rng();
+    for (let trial = 0; trial < 200; trial++) {
+      const exclude = TRANSFORMATIONS[trial % TRANSFORMATIONS.length] as
+        | 'transpose'
+        | 'fragment'
+        | 'augment'
+        | 'diminish'
+        | 'invert'
+        | 'ornament';
+      const second = pickCompoundSecond(
+        TRANSFORMATIONS,
+        TRANSFORMATION_BASE_WEIGHTS,
+        exclude,
+        rng.nextFloat(),
+      );
+      expect(second).not.toBe(exclude);
+    }
+  });
+
+  it('pickCompoundSecond at structural moments can return retrograde', () => {
+    // Should be reachable when retrograde is not the excluded kind.
+    const rng = Seed.from(1n).rng();
+    const sWeights = structuralWeights(TRANSFORMATION_BASE_WEIGHTS);
+    let sawRetrograde = false;
+    for (let i = 0; i < 200; i++) {
+      const second = pickCompoundSecond(
+        STRUCTURAL_TRANSFORMATIONS,
+        sWeights,
+        'transpose',
+        rng.nextFloat(),
+      );
+      if (second === 'retrograde') {
+        sawRetrograde = true;
+        break;
+      }
+    }
+    expect(sawRetrograde).toBe(true);
+  });
+
+  it('sampleBetaTwoFive lies in [0, 1] and has the expected mean ~2/7', () => {
+    const rng = Seed.from(1n).rng();
+    const N = 10000;
+    let sum = 0;
+    let max = 0;
+    let min = 1;
+    for (let i = 0; i < N; i++) {
+      const v = sampleBetaTwoFive(rng);
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(1);
+      sum += v;
+      if (v > max) max = v;
+      if (v < min) min = v;
+    }
+    const mean = sum / N;
+    // Beta(2, 5) mean = 2/(2+5) = 2/7 ≈ 0.2857.
+    expect(mean).toBeGreaterThan(0.25);
+    expect(mean).toBeLessThan(0.32);
   });
 });

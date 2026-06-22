@@ -16,7 +16,9 @@ import {
   type Germ,
   type GermNote,
   generateGerm,
+  pickCompoundSecond,
   STRUCTURAL_TRANSFORMATIONS,
+  sampleBetaTwoFive,
   structuralWeights,
   type Template,
   TRANSFORMATION_BASE_WEIGHTS,
@@ -27,28 +29,35 @@ import {
 } from './melody/index.js';
 
 /**
- * Germ-driven melody scheduler — Phase 2 Commit D.
+ * Germ-driven melody scheduler — Phase 2 complete (Commits B–F).
  *
- * Each firing emits a *multi-note fragment*, not a single note. The
- * four-way per-firing decision (germ / transform / buffer / fresh)
- * is rolled at every fragment-start opportunity. In this commit only
- * the `germ` and `fresh` branches produce distinct output — `transform`
- * and `buffer` fall back to germ verbatim until Commit E lands the
- * transformation library. The buffer is still maintained so the buffer
- * branch has material to draw from when E flips it on.
+ * Each firing emits a *multi-note fragment* (or a single chord-aware
+ * note in the `fresh` case), not a single per-quarter note. At each
+ * fragment-start opportunity the F1 min-cap coupling formula gates a
+ * Bernoulli; on fire the four-way emission rule (germ / transform /
+ * buffer / fresh) is rolled, the chosen transformation applied
+ * (transform + buffer branches), and a Commit F compound 2-chain may
+ * apply a second transformation with per-seed `pCompound` probability.
  *
- * Fragment cadence: on fire, all germ notes (or one fresh note) emit
- * relative to the firing quarter, and `nextQuarter` advances past the
- * fragment's tail so we don't double-fire mid-phrase. Silence between
- * fragments emerges naturally from the activity gate.
+ * Buffer rule is locked to the `fragment` transformation so recent
+ * material reappears as short slices rather than full-length recurrences.
+ * Retrograde is gated to structural moments (chord-slot boundaries via
+ * `state.structuralMomentTimes`).
+ *
+ * `nextQuarter` advances past the fragment's tail so we don't double-
+ * fire mid-phrase. Silence between fragments emerges naturally from
+ * the activity gate.
  *
  * Seed children:
- *   - (Commit B) `melody-template-config/-` / `melody-germ`
- *   - (Commit C) `melody-activity-fbm/-config`,
- *                `melody-chord-coupling-fbm/-config`
- *   - (Commit D) `melody-emission`, `melody-emission-config`,
- *                `melody-buffer-config`
- *   - root `melody` stream: per-firing `fireRoll` + per-note velocity
+ *   - `melody-template-config` / `melody-template` / `melody-germ`     (Commit B)
+ *   - `melody-activity-fbm` / `melody-activity-config`                 (Commit C)
+ *   - `melody-chord-coupling-fbm` / `melody-chord-coupling-config`     (Commit C)
+ *   - `melody-emission` / `melody-emission-config` /
+ *     `melody-buffer-config`                                           (Commit D)
+ *   - `melody-transformation` / `melody-transformation-config` /
+ *     `melody-transformation-param`                                    (Commit E)
+ *   - `melody-compound` / `melody-compound-config`                     (Commit F)
+ *   - root `melody` stream: per-firing fireRoll + per-note velocity
  *                           + fresh-note rolls
  */
 
@@ -112,6 +121,10 @@ const FRESH_DURATIONS_BEATS: readonly number[] = [1, 0.5];
  * without dragging in mid-slot firings. */
 const STRUCTURAL_PROXIMITY_BEATS = 0.5;
 
+/** Per-seed compound 2-chain rate is `Beta(2, 5) · this_factor` per
+ * `docs/melody.md` F2 (mean ~0.143, max ~0.5). Stable for the session. */
+const COMPOUND_RATE_FACTOR = 0.5;
+
 export class MelodyScheduler implements SubScheduler {
   private rng!: Rng;
   private emissionRng!: Rng;
@@ -121,8 +134,8 @@ export class MelodyScheduler implements SubScheduler {
   readonly template: Template;
   readonly germ: Germ;
   /** Rolling window of last N emitted notes (scale-degree-offset form).
-   * Phase 2 Commit E will sample windows from this for the `buffer`
-   * branch; for now it just accumulates. */
+   * The `buffer` rule samples a recent slice and runs it through the
+   * fragment transformation. */
   private buffer: GermNote[] = [];
   private readonly bufferSize: number;
 
@@ -135,6 +148,9 @@ export class MelodyScheduler implements SubScheduler {
   private readonly transformationWeights: number[];
   private transformationRng!: Rng;
   private transformationParamRng!: Rng;
+  /** Per-seed compound-chain rate, fixed at construction. */
+  private readonly pCompound: number;
+  private compoundRng!: Rng;
 
   constructor(
     private readonly seed: Seed,
@@ -194,6 +210,9 @@ export class MelodyScheduler implements SubScheduler {
       TRANSFORMATION_DIRICHLET_ALPHA,
     );
 
+    this.pCompound =
+      sampleBetaTwoFive(seed.child('melody-compound-config').rng()) * COMPOUND_RATE_FACTOR;
+
     this.reset();
   }
 
@@ -204,6 +223,7 @@ export class MelodyScheduler implements SubScheduler {
     this.emissionRng = this.seed.child('melody-emission').rng();
     this.transformationRng = this.seed.child('melody-transformation').rng();
     this.transformationParamRng = this.seed.child('melody-transformation-param').rng();
+    this.compoundRng = this.seed.child('melody-compound').rng();
   }
 
   scheduleUntil(_from: number, to: number): EngineEvent[] {
@@ -219,13 +239,15 @@ export class MelodyScheduler implements SubScheduler {
       const ruleRoll = this.emissionRng.nextFloat();
       if (fireRoll < effective) {
         const rule = this.pickRule(ruleRoll);
-        // Always-consume the transformation selection roll inside the
-        // fire branch, even for germ/fresh rules that don't apply a
-        // transformation — keeps determinism stable across rule
-        // selection. Parameter rolls are consumed inside the transform
-        // helpers as needed.
+        // Always-consume both selection rolls (transform + compound)
+        // inside the fire branch, even for germ/fresh rules that don't
+        // chain anything — keeps determinism stable across rule
+        // selection. Parameter rolls (incl. the second-transformation
+        // selection roll, when compound fires) are consumed inside
+        // the helpers as needed.
         const transformRoll = this.transformationRng.nextFloat();
-        const advanceBeats = this.emitFragment(events, time, rule, transformRoll);
+        const compoundRoll = this.compoundRng.nextFloat();
+        const advanceBeats = this.emitFragment(events, time, rule, transformRoll, compoundRoll);
         this.nextQuarter += Math.max(1, Math.ceil(advanceBeats));
       } else {
         this.nextQuarter++;
@@ -270,6 +292,7 @@ export class MelodyScheduler implements SubScheduler {
     time: number,
     rule: EmissionRule,
     transformRoll: number,
+    compoundRoll: number,
   ): number {
     if (rule === 'fresh') {
       return this.emitFresh(events, time);
@@ -285,16 +308,38 @@ export class MelodyScheduler implements SubScheduler {
     // its outcome is overridden for the buffer branch.
     const transformKind = this.pickTransformation(transformRoll, time);
     let source: Germ;
-    let kind = transformKind;
+    let firstKind = transformKind;
     if (rule === 'buffer') {
       const window = this.bufferWindow();
       source = window.length >= 2 ? window : this.germ;
-      kind = 'fragment';
+      firstKind = 'fragment';
     } else {
       source = this.germ;
     }
-    const transformed = transformGerm(kind, source, this.transformationParamRng);
-    return this.emitGerm(events, time, transformed);
+    let result = transformGerm(firstKind, source, this.transformationParamRng);
+
+    // Commit F compound 2-chain: with per-seed `pCompound` probability,
+    // pick a second transformation (excluding the first to avoid
+    // degenerate same-kind chaining) and apply left-to-right. Second-
+    // kind selection rolls from the compound stream so determinism
+    // stays scoped. Retrograde joins the menu at structural moments
+    // per `docs/melody.md` F2 ("Retrograde allowed in compound chains
+    // at structural moments").
+    if (compoundRoll < this.pCompound && result.length >= 2) {
+      const secondKind = this.pickCompoundSecond(firstKind, time);
+      result = transformGerm(secondKind, result, this.transformationParamRng);
+    }
+
+    return this.emitGerm(events, time, result);
+  }
+
+  private pickCompoundSecond(firstKind: TransformationKind, time: number): TransformationKind {
+    const roll = this.compoundRng.nextFloat();
+    if (this.isStructuralMoment(time)) {
+      const weights = structuralWeights(this.transformationWeights);
+      return pickCompoundSecond(STRUCTURAL_TRANSFORMATIONS, weights, firstKind, roll);
+    }
+    return pickCompoundSecond(TRANSFORMATIONS, this.transformationWeights, firstKind, roll);
   }
 
   /** Pick a transformation from per-seed Dirichlet weights. At

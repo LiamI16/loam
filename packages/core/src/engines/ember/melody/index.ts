@@ -16,8 +16,10 @@ export {
   type TerminationType,
 } from './templates.js';
 export {
+  pickCompoundSecond,
   RETROGRADE_STRUCTURAL_WEIGHT,
   STRUCTURAL_TRANSFORMATIONS,
+  sampleBetaTwoFive,
   structuralWeights,
   TRANSFORMATION_BASE_WEIGHTS,
   TRANSFORMATION_DIRICHLET_ALPHA,

@@ -239,6 +239,22 @@ reset is a v2 break for any saved seed. Recorded:
   independently — preparation for melody rewrite. Fingerprint count
   stays at 113; first 6 event signatures change `rhodes` →
   `rhodes_chord` (string-level only).
+- 2026-06-21 (melody Commit F — compound 2-chain): Phase 2 complete.
+  After the first transformation is applied (transform / buffer rule
+  only — germ verbatim and fresh-note don't trigger compound), a
+  Bernoulli against the per-seed `pCompound` decides whether to chain
+  a second transformation. Second-kind selection from the same Dirichlet
+  weights, with the first kind excluded (weight redistributed
+  proportionally across the rest) to avoid degenerate same-kind
+  compositions (e.g. transpose-then-transpose collapsing to a larger
+  transpose). At structural moments retrograde joins both menus.
+  Composition is left-to-right: `result = secondKind(firstKind(source))`.
+  Per-seed `pCompound = Beta(2, 5) · 0.5` (mean ~0.143, max ~0.5)
+  sampled via 6-uniform order statistic from `melody-compound-config`.
+  Adds seed children `melody-compound`, `melody-compound-config`.
+  Determinism: `compoundRoll` always-consumed inside fire branch;
+  second-kind selection roll consumed only when compound fires.
+  Fingerprint still 113 for seed 42 in [0, 5s).
 - 2026-06-21 (melody activity rate retune): post-Commit-E ear test
   flagged the main melody as "firing too often" even on calm seeds.
   Root cause: when Commit C swapped per-quarter single-note Bernoulli

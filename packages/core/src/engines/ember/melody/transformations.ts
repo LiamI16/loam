@@ -104,6 +104,61 @@ export function structuralWeights(nonStructural: readonly number[]): number[] {
   return [...nonStructural.map((w) => w * scale), RETROGRADE_STRUCTURAL_WEIGHT];
 }
 
+/** Pick a transformation kind from `items` with the given `weights`,
+ * excluding `exclude` from the pool. The excluded item's weight is
+ * redistributed proportionally across the rest. Used by Commit F
+ * compound 2-chains to avoid degenerate same-kind chaining
+ * (transpose-then-transpose collapses to a larger transpose). */
+export function pickCompoundSecond(
+  items: readonly TransformationKind[],
+  weights: readonly number[],
+  exclude: TransformationKind,
+  roll: number,
+): TransformationKind {
+  let remaining = 0;
+  for (let i = 0; i < items.length; i++) {
+    if (items[i] === exclude) continue;
+    remaining += weights[i] ?? 0;
+  }
+  // Edge case: all weight was on the excluded item. Fall back to the
+  // first non-excluded item — should be vanishingly rare with α=20
+  // Dirichlet perturbation, but defend against div-by-zero anyway.
+  if (remaining <= 0) {
+    for (const k of items) if (k !== exclude) return k;
+    return items[0] as TransformationKind;
+  }
+  const target = roll * remaining;
+  let acc = 0;
+  for (let i = 0; i < items.length; i++) {
+    if (items[i] === exclude) continue;
+    acc += weights[i] ?? 0;
+    if (target < acc) return items[i] as TransformationKind;
+  }
+  // Fallback if FP rounding ever overshoots.
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (items[i] !== exclude) return items[i] as TransformationKind;
+  }
+  return items[0] as TransformationKind;
+}
+
+/** Sample from Beta(2, 5) via the 6-uniform order-statistic identity:
+ * the k-th order statistic of n uniforms is Beta(k, n+1-k). For our
+ * `melody-compound-config` per-seed `p_compound` draw — yields a
+ * right-skewed distribution with mean 2/7 ≈ 0.286, used by Commit F
+ * scaled by 0.5 to mean ~0.143 / max ~0.5 (per `docs/melody.md` F2). */
+export function sampleBetaTwoFive(rng: Rng): number {
+  const samples = [
+    rng.nextFloat(),
+    rng.nextFloat(),
+    rng.nextFloat(),
+    rng.nextFloat(),
+    rng.nextFloat(),
+    rng.nextFloat(),
+  ];
+  samples.sort((a, b) => a - b);
+  return samples[1] as number;
+}
+
 function transpose(source: Germ, rng: Rng): Germ {
   const offset = rng.pick(TRANSPOSE_OFFSETS);
   return source.map((n) => ({
