@@ -12,7 +12,19 @@ import {
   modeMidiBag,
   perturbDirichlet,
 } from './harmony/index.js';
-import { type Germ, type GermNote, generateGerm, type Template } from './melody/index.js';
+import {
+  type Germ,
+  type GermNote,
+  generateGerm,
+  STRUCTURAL_TRANSFORMATIONS,
+  structuralWeights,
+  type Template,
+  TRANSFORMATION_BASE_WEIGHTS,
+  TRANSFORMATION_DIRICHLET_ALPHA,
+  TRANSFORMATIONS,
+  type TransformationKind,
+  transformGerm,
+} from './melody/index.js';
 
 /**
  * Germ-driven melody scheduler — Phase 2 Commit D.
@@ -82,6 +94,12 @@ const EMISSION_DIRICHLET_ALPHA = 20;
  * scheduler's 50/50 4n/8n behaviour). */
 const FRESH_DURATIONS_BEATS: readonly number[] = [1, 0.5];
 
+/** A fragment-start is "structural" if it falls within this many beats
+ * of any chord-slot boundary in `state.structuralMomentTimes`. Half a
+ * quarter is loose enough to catch fragments anchored to chord changes
+ * without dragging in mid-slot firings. */
+const STRUCTURAL_PROXIMITY_BEATS = 0.5;
+
 export class MelodyScheduler implements SubScheduler {
   private rng!: Rng;
   private emissionRng!: Rng;
@@ -99,6 +117,12 @@ export class MelodyScheduler implements SubScheduler {
   private readonly activityStream: FbmParam;
   private readonly couplingStream: FbmParam;
   private readonly emissionWeights: number[];
+  /** Per-seed Dirichlet-perturbed transformation weights (non-structural
+   * six). Structural-moment weights (seven, retrograde appended) are
+   * derived at use-time from these. */
+  private readonly transformationWeights: number[];
+  private transformationRng!: Rng;
+  private transformationParamRng!: Rng;
 
   constructor(
     private readonly seed: Seed,
@@ -152,6 +176,12 @@ export class MelodyScheduler implements SubScheduler {
       EMISSION_DIRICHLET_ALPHA,
     );
 
+    this.transformationWeights = perturbDirichlet(
+      TRANSFORMATION_BASE_WEIGHTS,
+      seed.child('melody-transformation-config').rng(),
+      TRANSFORMATION_DIRICHLET_ALPHA,
+    );
+
     this.reset();
   }
 
@@ -160,6 +190,8 @@ export class MelodyScheduler implements SubScheduler {
     this.buffer = [];
     this.rng = this.seed.rng();
     this.emissionRng = this.seed.child('melody-emission').rng();
+    this.transformationRng = this.seed.child('melody-transformation').rng();
+    this.transformationParamRng = this.seed.child('melody-transformation-param').rng();
   }
 
   scheduleUntil(_from: number, to: number): EngineEvent[] {
@@ -175,7 +207,13 @@ export class MelodyScheduler implements SubScheduler {
       const ruleRoll = this.emissionRng.nextFloat();
       if (fireRoll < effective) {
         const rule = this.pickRule(ruleRoll);
-        const advanceBeats = this.emitFragment(events, time, rule);
+        // Always-consume the transformation selection roll inside the
+        // fire branch, even for germ/fresh rules that don't apply a
+        // transformation — keeps determinism stable across rule
+        // selection. Parameter rolls are consumed inside the transform
+        // helpers as needed.
+        const transformRoll = this.transformationRng.nextFloat();
+        const advanceBeats = this.emitFragment(events, time, rule, transformRoll);
         this.nextQuarter += Math.max(1, Math.ceil(advanceBeats));
       } else {
         this.nextQuarter++;
@@ -202,15 +240,69 @@ export class MelodyScheduler implements SubScheduler {
   }
 
   /** Emit a fragment starting at `time`. Returns the fragment's total
-   * beat-length so the caller can advance `nextQuarter` past it. */
-  private emitFragment(events: EngineEvent[], time: number, rule: EmissionRule): number {
+   * beat-length so the caller can advance `nextQuarter` past it.
+   *
+   * Rule routing:
+   *   germ      → germ verbatim
+   *   transform → `transformGerm(kind, germ, param-rng)`
+   *   buffer    → `transformGerm(kind, buffer-window, param-rng)`,
+   *               or germ verbatim if buffer too short
+   *   fresh     → single chord-aware pitch
+   *
+   * At structural moments (fragment-start within
+   * `STRUCTURAL_PROXIMITY_BEATS` of any `state.structuralMomentTimes`
+   * entry), retrograde is added to the transformation menu at its
+   * fixed structural weight. */
+  private emitFragment(
+    events: EngineEvent[],
+    time: number,
+    rule: EmissionRule,
+    transformRoll: number,
+  ): number {
     if (rule === 'fresh') {
       return this.emitFresh(events, time);
     }
-    // germ / transform / buffer: all fall back to germ verbatim in
-    // Commit D. Commit E will branch transform + buffer into real
-    // transformations.
-    return this.emitGerm(events, time, this.germ);
+    if (rule === 'germ') {
+      return this.emitGerm(events, time, this.germ);
+    }
+    // transform / buffer: pick transformation, apply, emit.
+    const kind = this.pickTransformation(transformRoll, time);
+    let source: Germ;
+    if (rule === 'buffer') {
+      const window = this.bufferWindow();
+      source = window.length >= 2 ? window : this.germ;
+    } else {
+      source = this.germ;
+    }
+    const transformed = transformGerm(kind, source, this.transformationParamRng);
+    return this.emitGerm(events, time, transformed);
+  }
+
+  /** Pick a transformation from per-seed Dirichlet weights. At
+   * structural moments the menu includes retrograde at the fixed
+   * structural weight; elsewhere the six-item menu is used. */
+  private pickTransformation(roll: number, time: number): TransformationKind {
+    if (this.isStructuralMoment(time)) {
+      const weights = structuralWeights(this.transformationWeights);
+      return selectKind(STRUCTURAL_TRANSFORMATIONS, weights, roll);
+    }
+    return selectKind(TRANSFORMATIONS, this.transformationWeights, roll);
+  }
+
+  private isStructuralMoment(time: number): boolean {
+    const proximity = STRUCTURAL_PROXIMITY_BEATS * this.secondsPerBeat;
+    for (const t of this.state.structuralMomentTimes) {
+      if (Math.abs(t - time) <= proximity) return true;
+    }
+    return false;
+  }
+
+  /** Take the most-recent window of buffer notes, length capped at the
+   * germ's length so transformed fragments stay phrase-shaped. */
+  private bufferWindow(): Germ {
+    const len = Math.min(this.germ.length, this.buffer.length);
+    if (len === 0) return [];
+    return this.buffer.slice(this.buffer.length - len);
   }
 
   private emitGerm(events: EngineEvent[], startTime: number, source: Germ): number {
@@ -296,6 +388,15 @@ export class MelodyScheduler implements SubScheduler {
     this.buffer.push(note);
     while (this.buffer.length > this.bufferSize) this.buffer.shift();
   }
+}
+
+function selectKind<T>(items: readonly T[], weights: readonly number[], roll: number): T {
+  let acc = 0;
+  for (let i = 0; i < items.length; i++) {
+    acc += weights[i] ?? 0;
+    if (roll < acc) return items[i] as T;
+  }
+  return items[items.length - 1] as T;
 }
 
 function clampInt(v: number, lo: number, hi: number): number {

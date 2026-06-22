@@ -239,6 +239,24 @@ reset is a v2 break for any saved seed. Recorded:
   independently — preparation for melody rewrite. Fingerprint count
   stays at 113; first 6 event signatures change `rhodes` →
   `rhodes_chord` (string-level only).
+- 2026-06-21 (melody Commit E — transformations + retrograde
+  gating): the `transform` and `buffer` branches of the four-way
+  emission rule now route through `melody/transformations.ts`. Six
+  transformations always available (transpose / fragment / augment /
+  diminish / invert / ornament) with base weights
+  `[0.27, 0.27, 0.13, 0.07, 0.10, 0.16]`; retrograde joins the menu at
+  fixed weight 0.15 (others scaled to 0.85) when a fragment-start
+  falls within 0.5 beats of any `state.structuralMomentTimes` entry.
+  Per-seed Dirichlet α=20 on the six. Adds seed children
+  `melody-transformation`, `melody-transformation-config`,
+  `melody-transformation-param`. Determinism roll order inside the
+  fire branch: fireRoll, ruleRoll, transformRoll (always), then
+  transform-internal param rolls (consumed only by the transformation
+  that needs them). Audio for every seed shifts substantially —
+  perceived monotony from the Commit D verbatim-germ fallback is the
+  main thing this fixes. Engine fingerprint stays at count 113 for
+  `Seed.from(42n)` in [0, 5s) because seed 42 still doesn't fire
+  melody in that window.
 - 2026-06-21 (melody Commit D — fragment emission + 4-way rule
   + buffer): per-firing emission switches from single-note to
   multi-note fragment. The 4-way decision (germ / transform / buffer

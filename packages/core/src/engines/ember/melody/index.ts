@@ -15,3 +15,13 @@ export {
   type TemplateId,
   type TerminationType,
 } from './templates.js';
+export {
+  RETROGRADE_STRUCTURAL_WEIGHT,
+  STRUCTURAL_TRANSFORMATIONS,
+  structuralWeights,
+  TRANSFORMATION_BASE_WEIGHTS,
+  TRANSFORMATION_DIRICHLET_ALPHA,
+  TRANSFORMATIONS,
+  type TransformationKind,
+  transformGerm,
+} from './transformations.js';
