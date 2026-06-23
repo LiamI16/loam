@@ -31,7 +31,30 @@
       user-select: none;
       overflow: hidden;
     }
-    .wrap { display: flex; flex-direction: column; align-items: center; gap: 42px; padding: 32px; }
+    .wrap { display: flex; flex-direction: column; align-items: center; gap: 42px; padding: 32px; position: relative; z-index: 1; }
+
+    /* ── texture: vignette + film grain ──
+       Pure radial gradients read flat; a vignette adds depth and a faint
+       grain matches the lo-fi/vinyl theme. Both sit below content
+       (z-index:-1) and never intercept input (pointer-events:none). */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: -1;
+      background: radial-gradient(120% 120% at 50% 32%, transparent 52%, rgba(0, 0, 0, 0.5) 100%);
+    }
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: -1;
+      opacity: 0.04;
+      mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
 
     /* ── ember: hero + play affordance ── */
     .ember-stage {
@@ -71,6 +94,19 @@
     @keyframes breatheGlow {
       0%, 100% { transform: scale(0.9);  opacity: 0.5;  }
       50%      { transform: scale(1.12); opacity: 0.95; }
+    }
+    /* Attract loop before first interaction: a slow swell that pulls the
+       eye to the (otherwise easy-to-miss) play affordance. Removed in JS
+       on first toggle, so it never competes with the beat-synced breathe. */
+    .ember-stage.attract .ember { animation: attract 3.4s ease-in-out infinite; }
+    .ember-stage.attract .glow  { animation: attractGlow 3.4s ease-in-out infinite; }
+    @keyframes attract {
+      0%, 100% { opacity: 0.24; transform: scale(0.96); }
+      50%      { opacity: 0.52; transform: scale(1.04); }
+    }
+    @keyframes attractGlow {
+      0%, 100% { opacity: 0.16; }
+      50%      { opacity: 0.42; }
     }
     /* No focus ring on the ember stage — the breathing glow already
        indicates play state, and a persistent ring after spacebar reads
@@ -303,6 +339,18 @@
       padding: 84px 26px 26px;
     }
     .menu.open .menu-drawer { transform: translateX(0); }
+    /* Ember accent rail down the drawer's left edge — ties the panel to
+       the hero ember glow. */
+    .menu-drawer::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: linear-gradient(180deg, transparent 0%, var(--ember) 45%, var(--ember-dim) 60%, transparent 100%);
+      opacity: 0.55;
+    }
 
     .drawer-title {
       font-size: 10px;
@@ -356,6 +404,25 @@
       letter-spacing: 0.03em;
     }
 
+    .drawer-foot {
+      margin-top: auto;
+      padding-top: 18px;
+      font-size: 9px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      opacity: 0.6;
+      line-height: 1.6;
+    }
+    .drawer-foot kbd {
+      font-family: inherit;
+      color: var(--ember-dim);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 9px;
+    }
+
     .footer {
       position: fixed;
       bottom: 22px;
@@ -371,6 +438,15 @@
       .ember-stage.on .ember, .ember-stage.on .glow { animation: none; }
       .ember-stage.on .ember { opacity: 0.92; }
       .ember-stage.on .glow  { opacity: 0.8; }
+      .ember-stage.attract .ember, .ember-stage.attract .glow { animation: none; }
+      /* Drawer: fade instead of slide for motion-sensitive users. */
+      .menu-drawer {
+        transform: none;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.2s ease, visibility 0.2s ease;
+      }
+      .menu.open .menu-drawer { transform: none; opacity: 1; visibility: visible; }
     }
   </style>
 </head>
@@ -390,10 +466,11 @@
         </span>
         <span class="menu-item-desc">Open a pre-filled GitHub issue with this seed attached.</span>
       </a>
+      <p class="drawer-foot"><kbd>M</kbd> open · <kbd>Esc</kbd> close</p>
     </aside>
   </div>
   <div class="wrap">
-    <div class="ember-stage" id="stage" role="button" tabindex="0" aria-label="Play or pause">
+    <div class="ember-stage attract" id="stage" role="button" tabindex="0" aria-label="Play or pause">
       <div class="glow"></div>
       <div class="ember"></div>
     </div>

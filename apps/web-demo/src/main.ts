@@ -102,6 +102,9 @@ async function toggle(): Promise<void> {
     initialised = true;
   }
   if (!adapter) return;
+  // First interaction — retire the attract pulse so it never competes
+  // with the beat-synced breathe.
+  stage.classList.remove('attract');
   if (!playing) {
     await adapter.start();
     stage.classList.add('on');
@@ -329,6 +332,13 @@ window.addEventListener('keydown', (e) => {
     if (isTypingTarget(t)) return;
     e.preventDefault();
     void reseed(randomSeed());
+    return;
+  }
+  if (e.key === 'm' || e.key === 'M') {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (isTypingTarget(t)) return;
+    e.preventDefault();
+    setMenuOpen(!menu.classList.contains('open'));
   }
 });
 

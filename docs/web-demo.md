@@ -261,11 +261,14 @@ URL. Pairs naturally with #8 (favorites).
 
 **Files:** `apps/web-demo/src/main.ts` (reseed + popstate).
 
-#### 7. Numeric entry for sliders
+#### 7. Numeric entry for sliders — DONE
 
-Speed especially — you can't dial exactly 0.85× by dragging. Add small
-editable number boxes (or click-to-type on the value label) beside the
-sliders. Cross-ref: `user-feedback-features.md → Text boxes for sliders`.
+Click-to-type on the value label (volume + speed): the value carries a
+persistent dotted-underline affordance, click swaps it for an inline
+input (Enter commits, Esc cancels, blur commits), clamped + snapped to
+the slider's step. Speed snaps to 0.1× so the readout always matches
+playback. Warmth left as its qualitative label. Cross-ref:
+`user-feedback-features.md → Text boxes for sliders`.
 
 **Files:** `apps/web-demo/index.html`, `apps/web-demo/src/main.ts`.
 
@@ -322,12 +325,12 @@ background wash when on, so a major audio feature has a face.
 
 ### Lower / polish
 
-#### 13. Texture pass — grain + vignette
+#### 13. Texture pass — grain + vignette — DONE
 
-Pure radial gradients read flat and "CSS demo." A subtle film-grain
-overlay (SVG `feTurbulence` or a tiled PNG) at low opacity matches the
-lo-fi/vinyl theme conceptually *and* visually — right now "vinyl" is
-audio-only, give it a face.
+Two `body` pseudo-element overlays, below content and click-through: a
+radial vignette for depth, plus a film-grain layer (inline SVG
+`feTurbulence`, `opacity: 0.04`, `mix-blend-mode: overlay`) matching the
+vinyl/lo-fi framing.
 
 #### 14. Drifting ember particles
 
@@ -340,17 +343,18 @@ Everything is one monospace at near-identical tiny sizes with wide
 tracking — tasteful but monotone. The seed (the star) deserves a larger,
 more confident treatment vs. the control labels.
 
-#### 16. First-load attract pulse
+#### 16. First-load attract pulse — DONE
 
-The idle ember at `opacity: 0.28` is easy to miss as interactive. A slow
-attract-loop pulse before first interaction pulls the eye to the play
-affordance.
+The idle ember runs a slow 3.4s swell (`attract` class) to pull the eye
+to the play affordance, retired in JS on first toggle so it never
+competes with the beat-synced breathe. Respects `prefers-reduced-motion`.
 
-#### 17. Drawer polish (from §2 backlog)
+#### 17. Drawer polish (from §2 backlog) — DONE
 
-Ember accent rail along the drawer's left edge; `M`-to-open keyboard hint
-+ binding; reduced-motion drawer variant (fade instead of slide). Carried
-from the §2 drawer-polish list.
+Ember accent rail (1px gradient strip) down the drawer's left edge;
+`M`-to-open keyboard hint in a drawer footer + the binding in the global
+keydown handler; reduced-motion drawer variant that fades instead of
+sliding. Section-dividers item from §2 left out (still one card).
 
 ### Correctness / robustness (not aesthetic, but flagged)
 
