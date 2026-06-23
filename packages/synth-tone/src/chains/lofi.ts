@@ -22,8 +22,8 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
   // ── master & shared reverb return ───────────────────────────────
   const warmth = new Tone.Filter({
     type: 'lowpass',
-    frequency: warmHz(0.55),
-    rolloff: -12,
+    frequency: warmHz(0.7),
+    rolloff: -24,
   }).connect(adapter.master);
   // Shared reverb bus. wet=1 because reverb is now a send/return:
   // dry signal travels its own path; each instrument's `*Send` gain
@@ -372,9 +372,13 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
   });
 }
 
-/** Map a 0..1 warmth slider to a low-pass cutoff in Hz. */
+/** Map a 0..1 warmth slider to a low-pass cutoff in Hz.
+ * Floor (350 Hz) combined with the -24 dB/oct rolloff on the master warmth
+ * filter clearly muffles the signal at the dark end (behind-glass) without
+ * killing audibility; ceiling (14 kHz) is past the point of diminishing
+ * perceptual return so the useful range spans the full slider travel. */
 export function warmHz(v: number): number {
-  return 900 * (14000 / 900) ** v;
+  return 350 * (14000 / 350) ** v;
 }
 
 /** Map a 0..1 volume slider to dB, treating ≤0.001 as silence. */

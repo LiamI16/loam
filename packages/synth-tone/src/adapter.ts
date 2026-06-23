@@ -10,6 +10,23 @@ const TICK_INTERVAL_MS = 25;
  * to feel instant and long enough to avoid an audible click. */
 const STOP_FADE_SEC = 0.01;
 
+/** Inline Web Worker source. The worker exists for one reason: browsers
+ * throttle main-thread setInterval to ~1 Hz when a tab/window is hidden or
+ * minimized, which starves our 200 ms scheduling lookahead and causes audible
+ * dropouts. Worker timers are exempt from that throttling, so we drive the
+ * pump clock from here and let the main thread just receive ticks. */
+const PUMP_WORKER_SOURCE = `
+let id = null;
+self.onmessage = (e) => {
+  if (e.data && e.data.cmd === 'start') {
+    if (id !== null) clearInterval(id);
+    id = setInterval(() => self.postMessage('tick'), e.data.intervalMs);
+  } else if (e.data && e.data.cmd === 'stop') {
+    if (id !== null) { clearInterval(id); id = null; }
+  }
+};
+`;
+
 /**
  * The single layer that talks to Tone.js. Owns:
  *   - A master `Gain` between everything and `Tone.Destination`. Chains
@@ -39,7 +56,8 @@ export class ToneAudioAdapter {
 
   private engine: Engine | null = null;
   private startAudioTime = 0;
-  private intervalId: ReturnType<typeof setInterval> | null = null;
+  private pumpWorker: Worker | null = null;
+  private pumpWorkerUrl: string | null = null;
   /** Furthest absolute audio time any event has been scheduled at. Used to
    * keep a fresh `start()` from emitting events with a `time` earlier than
    * events still queued from a previous run (Tone's synths reject those). */
@@ -104,7 +122,22 @@ export class ToneAudioAdapter {
     // first event. First start: latestScheduledAudioTime == 0, no offset.
     this.startAudioTime = Math.max(Tone.now(), this.latestScheduledAudioTime + 0.005);
     this.pumpOnce();
-    this.intervalId = setInterval(() => this.pumpOnce(), TICK_INTERVAL_MS);
+    this.startPumpClock();
+  }
+
+  private startPumpClock(): void {
+    if (!this.pumpWorker) {
+      this.pumpWorkerUrl = URL.createObjectURL(
+        new Blob([PUMP_WORKER_SOURCE], { type: 'application/javascript' }),
+      );
+      this.pumpWorker = new Worker(this.pumpWorkerUrl);
+      this.pumpWorker.onmessage = () => this.pumpOnce();
+    }
+    this.pumpWorker.postMessage({ cmd: 'start', intervalMs: TICK_INTERVAL_MS });
+  }
+
+  private stopPumpClock(): void {
+    this.pumpWorker?.postMessage({ cmd: 'stop' });
   }
 
   /**
@@ -115,10 +148,7 @@ export class ToneAudioAdapter {
    * route through the gate. See `docs/adapter.md` §7.
    */
   stop(): void {
-    if (this.intervalId !== null) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
-    }
+    this.stopPumpClock();
     const now = Tone.now();
     const gain = this.out.gain;
     gain.cancelScheduledValues(now);

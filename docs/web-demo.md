@@ -160,6 +160,22 @@ Switch to Option B if low-friction-for-non-devs becomes a goal.
 **Files:** new button in `apps/web-demo/index.html` + handler in
 `main.ts` that constructs the issue URL with current seed/parameters.
 
+**Status:** Built as a 44×44 hamburger trigger (top-right) opening a
+slide-in side drawer with backdrop. First card = "Leave feedback" →
+pre-filled GitHub issue (seed + free-text prompt, label `feedback`).
+Donate card (§3) drops in as a sibling `<a class="menu-item">`.
+
+**Drawer polish backlog** (nice-to-haves, not blockers):
+
+- Ember accent rail along the drawer's left edge (1px gradient strip)
+  tying it into the hero ember glow.
+- Keyboard shortcut hint (`M` to open) shown in the drawer footer,
+  plus the actual binding wired in `main.ts`.
+- Section dividers (Feedback / Support / About) once more than two
+  cards exist — currently overkill for one item.
+- Reduced-motion variant: respect `prefers-reduced-motion: reduce`
+  by swapping the slide transform for an instant fade.
+
 ---
 
 ### 3. Donation button
@@ -201,3 +217,154 @@ that links to the same destinations.
 **Files:** `.github/FUNDING.yml`, `apps/web-demo/index.html` (footer
 icon), `apps/web-demo/src/main.ts` (or just a plain `<a>` — no JS
 needed).
+
+---
+
+## Adversarial review backlog (2026-06-23)
+
+Pass over the live demo looking for missing nice-to-haves and aesthetic
+ceiling. Ordered by effort × payoff — top items are cheap and high-impact.
+Some overlap with `docs/user-feedback-features.md`; cross-referenced where
+so.
+
+### High payoff / low cost
+
+#### 4. UI color themes (forest / sky / dusk)
+
+The CSS is already fully tokenized via `:root` vars, so swapping the
+palette is cheap and the single biggest visual ROI on the board. Add a
+small swatch row in the drawer (or a cycle button) that rewrites the
+token set. Persist choice in `localStorage`. Cross-ref:
+`user-feedback-features.md → UI Color Themes`.
+
+**Files:** `apps/web-demo/index.html` (theme token sets + swatch markup),
+`apps/web-demo/src/main.ts` (apply + persist).
+
+#### 5. Seed/key/BPM readout
+
+The engine derives a per-seed BPM (`engine.getOptions().bpm`) but it's
+only used to drive the ember pulse, never *shown*. Surface a tiny readout
+(`74 bpm · F lydian` or similar) near the seed so each seed feels
+distinct rather than interchangeable — reinforces the seed-identity
+thesis. Pull key/mode from the engine if exposed; BPM is already to hand.
+
+**Files:** `apps/web-demo/index.html` (readout element),
+`apps/web-demo/src/main.ts` (populate on build/reseed).
+
+#### 6. Browser history for rolls
+
+`roll` and `reseed` use `replaceState`, so the Back button can't return
+to a seed you liked three rolls ago — one careless roll destroys a good
+seed forever. Use `pushState` on *explicit* reseed/roll (not on slider
+changes), and wire a `popstate` handler to re-apply the seed from the
+URL. Pairs naturally with #8 (favorites).
+
+**Files:** `apps/web-demo/src/main.ts` (reseed + popstate).
+
+#### 7. Numeric entry for sliders
+
+Speed especially — you can't dial exactly 0.85× by dragging. Add small
+editable number boxes (or click-to-type on the value label) beside the
+sliders. Cross-ref: `user-feedback-features.md → Text boxes for sliders`.
+
+**Files:** `apps/web-demo/index.html`, `apps/web-demo/src/main.ts`.
+
+### Medium
+
+#### 8. Favorites / pinned seeds
+
+You find a great seed, there's nowhere to keep it. A `localStorage` pin
+list in the drawer is backend-free — pin the current seed, list pins as
+clickable permalinks. Complements #6.
+
+**Files:** `apps/web-demo/index.html` (drawer list), `main.ts`.
+
+#### 9. Mobile share — `navigator.share()` + QR
+
+"Copy link" is desktop-thinking. On mobile, native `navigator.share()`
+makes seed-passing actually frictionless; a QR code in the drawer lets
+someone scan a seed off your screen. Feature-detect share, fall back to
+the existing copy. Also: the current copy handler's `clipboard blocked`
+path leaves the user stuck — add a select-the-text fallback.
+
+**Files:** `apps/web-demo/index.html`, `apps/web-demo/src/main.ts`.
+
+#### 10. Human-readable seeds
+
+The seed is a 19-digit random `BigUint64Array` integer — hostile to
+share, impossible to remember. The README's pitch is "Minecraft seed
+personality," but a Minecraft seed you can *say to a friend*. Add a
+word-list encoding (`amber-thicket-roam` ↔ bigint) shown alongside (or
+instead of) the integer. The integer stays the canonical seed; the words
+are a reversible display layer. Larger design surface — sketch the
+encoding before building.
+
+**Files:** new encoder module, `index.html`, `main.ts`.
+
+#### 11. Audio-reactive ember
+
+The ember breathes on the clock (`--beat`), not the music. Hook the
+scale/opacity to an analyser node's RMS so loud moments flare — turns the
+hero from decoration into an instrument. Needs an `AnalyserNode` tap off
+the master chain in the adapter.
+
+**Files:** `packages/synth-tone` (expose analyser), `main.ts` (rAF loop).
+
+#### 12. Rain → three-state cycle + visible rain
+
+Two items, same feature. (a) Rain is binary; make it on → cycle (varying
+durations) → off per `user-feedback-features.md → Automatic Rain Cycle`.
+(b) Rain has zero visual presence — add faint diagonal streaks / a
+background wash when on, so a major audio feature has a face.
+
+**Files:** `apps/web-demo/index.html` (rain visual layer),
+`apps/web-demo/src/main.ts`, possibly engine/adapter for the cycle.
+
+### Lower / polish
+
+#### 13. Texture pass — grain + vignette
+
+Pure radial gradients read flat and "CSS demo." A subtle film-grain
+overlay (SVG `feTurbulence` or a tiled PNG) at low opacity matches the
+lo-fi/vinyl theme conceptually *and* visually — right now "vinyl" is
+audio-only, give it a face.
+
+#### 14. Drifting ember particles
+
+Slow rising sparks from the hero on play (cheap canvas or CSS). On-theme
+for "ember," gives the idle screen life during long focus sessions.
+
+#### 15. Typography contrast
+
+Everything is one monospace at near-identical tiny sizes with wide
+tracking — tasteful but monotone. The seed (the star) deserves a larger,
+more confident treatment vs. the control labels.
+
+#### 16. First-load attract pulse
+
+The idle ember at `opacity: 0.28` is easy to miss as interactive. A slow
+attract-loop pulse before first interaction pulls the eye to the play
+affordance.
+
+#### 17. Drawer polish (from §2 backlog)
+
+Ember accent rail along the drawer's left edge; `M`-to-open keyboard hint
++ binding; reduced-motion drawer variant (fade instead of slide). Carried
+from the §2 drawer-polish list.
+
+### Correctness / robustness (not aesthetic, but flagged)
+
+#### 18. Tab-switch audio dropout — DONE
+
+`user-feedback-features.md → Swapping tabs cuts out music` — Web Audio
+suspends on backgrounded tabs. Context now resumes on `visibilitychange`.
+
+#### 19. Engine-build error state
+
+`buildAudio` can throw and the hint stays at "warming up…" forever. Add a
+catch that surfaces a recoverable error message.
+
+#### 20. Re-enable pinch-zoom
+
+`maximum-scale=1` in the viewport meta disables pinch-zoom — an
+accessibility smell. Drop it unless there's a concrete reason.
