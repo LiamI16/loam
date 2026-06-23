@@ -178,11 +178,17 @@ Donate card (§3) drops in as a sibling `<a class="menu-item">`.
 
 ---
 
-### 3. Donation button
+### 3. Donation button — DONE
 
 Per the README's "MIT, permissively licensed" framing — donations
 are explicitly secondary, modeled as a trickle. The button is the
 acknowledgement-of-effort surface for users who want to.
+
+**Status:** Shipped via Ko-fi (`ko-fi.com/liamimagawa`).
+`.github/FUNDING.yml` lists `ko_fi: liamimagawa` (renders the repo
+"Sponsor" button); the demo surfaces a "Support loam" heart item in the
+extras drawer, below "Leave feedback". GitHub Sponsors can be added to
+`FUNDING.yml` later as a sibling once approved — both can coexist.
 
 **Platforms (mutually compatible — can list multiple):**
 
@@ -291,18 +297,6 @@ the existing copy. Also: the current copy handler's `clipboard blocked`
 path leaves the user stuck — add a select-the-text fallback.
 
 **Files:** `apps/web-demo/index.html`, `apps/web-demo/src/main.ts`.
-
-#### 10. Human-readable seeds
-
-The seed is a 19-digit random `BigUint64Array` integer — hostile to
-share, impossible to remember. The README's pitch is "Minecraft seed
-personality," but a Minecraft seed you can *say to a friend*. Add a
-word-list encoding (`amber-thicket-roam` ↔ bigint) shown alongside (or
-instead of) the integer. The integer stays the canonical seed; the words
-are a reversible display layer. Larger design surface — sketch the
-encoding before building.
-
-**Files:** new encoder module, `index.html`, `main.ts`.
 
 #### 11. Audio-reactive ember
 

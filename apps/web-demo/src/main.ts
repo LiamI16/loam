@@ -34,9 +34,17 @@ const seedInput = $<HTMLInputElement>('seed');
 function setBeatCss(bpm: number): void {
   stage.style.setProperty('--beat', `${60 / bpm}s`);
 }
-// Placeholder pulse before the engine builds; gets corrected when
-// buildAudio / reseed produces an engine and reports its derived BPM.
-setBeatCss(74);
+function setSeedMeta(bpm: number): void {
+  $<HTMLElement>('seedMeta').textContent = `· ${Math.round(bpm)} bpm`;
+}
+// Build a throwaway engine just to peek the seed's home BPM, so both the
+// idle ember pulse and the seed-meta readout match the seed before play.
+// EmberEngine init is pure JS — no audio context, cheap.
+{
+  const peek = new EmberEngine(Seed.from(currentSeed)).getOptions().bpm;
+  setBeatCss(peek);
+  setSeedMeta(peek);
+}
 seedInput.value = currentSeed.toString();
 
 // ── state ─────────────────────────────────────────────────────────
@@ -61,7 +69,9 @@ function buildAudio(seedValue: bigint): { adapter: ToneAudioAdapter; engine: Emb
 
   const e = buildEngine(seedValue);
   a.setEngine(e);
-  setBeatCss(e.getOptions().bpm);
+  const bpm = e.getOptions().bpm;
+  setBeatCss(bpm);
+  setSeedMeta(bpm);
 
   // Apply current UI slider values to the chain on init
   a.setParam('master.volume', volToDb(Number($<HTMLInputElement>('vol').value) / 100));
@@ -75,11 +85,13 @@ function buildAudio(seedValue: bigint): { adapter: ToneAudioAdapter; engine: Emb
  * clean handoff if currently playing; otherwise just swap. Used by
  * reseed (the only remaining lifecycle that swaps engines). */
 async function swapEngine(next: EmberEngine): Promise<void> {
+  const nextBpm = next.getOptions().bpm;
+  setBeatCss(nextBpm);
+  setSeedMeta(nextBpm);
   if (!initialised || !adapter) {
     engine = next;
     return;
   }
-  setBeatCss(next.getOptions().bpm);
   if (playing) {
     adapter.stop();
     await new Promise((r) => setTimeout(r, 30));
@@ -96,17 +108,29 @@ async function swapEngine(next: EmberEngine): Promise<void> {
 async function toggle(): Promise<void> {
   if (!initialised) {
     hint.textContent = 'warming up…';
-    const built = buildAudio(currentSeed);
-    adapter = built.adapter;
-    engine = built.engine;
-    initialised = true;
+    try {
+      const built = buildAudio(currentSeed);
+      adapter = built.adapter;
+      engine = built.engine;
+      initialised = true;
+    } catch (err) {
+      // Build threw (audio context, chain construction, engine init). Surface
+      // it so the user can retry instead of staring at "warming up…" forever.
+      console.error('[loam] audio build failed', err);
+      hint.textContent = 'audio failed to start · tap to retry';
+      return;
+    }
   }
   if (!adapter) return;
-  // First interaction — retire the attract pulse so it never competes
-  // with the beat-synced breathe.
   stage.classList.remove('attract');
   if (!playing) {
-    await adapter.start();
+    try {
+      await adapter.start();
+    } catch (err) {
+      console.error('[loam] audio start failed', err);
+      hint.textContent = 'audio failed to start · tap to retry';
+      return;
+    }
     stage.classList.add('on');
     hint.textContent = 'listening · leave it running';
     playing = true;
