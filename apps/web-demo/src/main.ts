@@ -52,23 +52,25 @@ let initialised = false;
 let playing = false;
 let adapter: ToneAudioAdapter | null = null;
 let engine: EmberEngine | null = null;
-// Rain has three modes: 'off' (silent), 'on' (steady), 'cycle' (fades in
-// and out on randomized intervals so it feels like a passing shower rather
-// than a constant rain). `rainPhase` tracks the current cycle phase so we
-// can re-apply it after a reseed or first play.
+// Rain has three modes: 'off' (silent), 'on' (steady), 'cycle' (slow
+// intensity modulation between heavier and lighter rain — never silent,
+// designed to be imperceptible if you're not paying attention).
+// `rainPhase` tracks the cycle's current intensity bucket.
 type RainMode = 'off' | 'on' | 'cycle';
-const uiState: { rainMode: RainMode; rainPhase: 'on' | 'off'; vinyl: boolean } = {
+const uiState: { rainMode: RainMode; rainPhase: 'heavy' | 'light'; vinyl: boolean } = {
   rainMode: 'off',
-  rainPhase: 'off',
+  rainPhase: 'light',
   vinyl: true,
 };
-const RAIN_ON_DB = -33;
-const RAIN_OFF_DB = -60; // -∞ would break rampTo; -60 dB is inaudible
+const RAIN_STEADY_DB = -33; // user-toggled "on" mode
+const RAIN_HEAVY_DB = -33; // cycle: foreground rain
+const RAIN_LIGHT_DB = -50; // cycle: rain through a wall — still ambient, never silent
+const RAIN_SILENT_DB = -60; // dedicated "off" mode; -∞ would break rampTo
 
 function rainTargetDb(): number {
-  if (uiState.rainMode === 'on') return RAIN_ON_DB;
-  if (uiState.rainMode === 'cycle') return uiState.rainPhase === 'on' ? RAIN_ON_DB : RAIN_OFF_DB;
-  return RAIN_OFF_DB;
+  if (uiState.rainMode === 'on') return RAIN_STEADY_DB;
+  if (uiState.rainMode === 'cycle') return uiState.rainPhase === 'heavy' ? RAIN_HEAVY_DB : RAIN_LIGHT_DB;
+  return RAIN_SILENT_DB;
 }
 
 // ── audio init ────────────────────────────────────────────────────
@@ -151,11 +153,20 @@ async function toggle(): Promise<void> {
     stage.classList.add('on');
     hint.textContent = 'listening · leave it running';
     playing = true;
+    // Resume the rain cycle alongside playback so transitions only happen
+    // against audible audio.
+    if (uiState.rainMode === 'cycle') {
+      adapter.setParam('bed.rain.level', rainTargetDb(), RAIN_TOGGLE_FADE_MS);
+      clearRainCycle();
+      scheduleNextRainPhase();
+    }
   } else {
     adapter.stop();
     stage.classList.remove('on');
     hint.textContent = 'paused';
     playing = false;
+    // Freeze the cycle while paused — no transitions happening to silence.
+    clearRainCycle();
   }
 }
 
@@ -277,12 +288,17 @@ makeEditable('speedVal', 'speed', (t) => {
 });
 
 // ── rain: off → on → cycle → off ─────────────────────────────────
-// Cycle = randomized on/off phases with smooth fades. Tunable here:
-const RAIN_FADE_MS = 8_000;
-const RAIN_ON_MIN_MS = 30_000;
-const RAIN_ON_MAX_MS = 90_000;
-const RAIN_OFF_MIN_MS = 20_000;
-const RAIN_OFF_MAX_MS = 50_000;
+// Cycle = slow intensity modulation. Phase durations live in the
+// multi-minute range so transitions slip below conscious attention; the
+// cycle crossfade is long for the same reason. User-triggered mode
+// changes (off↔on, anything↔cycle) get a short fade — long enough to
+// avoid a click, short enough to feel responsive to the button press.
+const RAIN_TOGGLE_FADE_MS = 800;
+const RAIN_CYCLE_FADE_MS = 30_000;
+const RAIN_HEAVY_MIN_MS = 4 * 60_000;
+const RAIN_HEAVY_MAX_MS = 8 * 60_000;
+const RAIN_LIGHT_MIN_MS = 2 * 60_000;
+const RAIN_LIGHT_MAX_MS = 4 * 60_000;
 
 let rainCycleTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -294,14 +310,14 @@ function clearRainCycle(): void {
 }
 
 function scheduleNextRainPhase(): void {
-  const onPhase = uiState.rainPhase === 'on';
-  const lo = onPhase ? RAIN_ON_MIN_MS : RAIN_OFF_MIN_MS;
-  const hi = onPhase ? RAIN_ON_MAX_MS : RAIN_OFF_MAX_MS;
+  const heavy = uiState.rainPhase === 'heavy';
+  const lo = heavy ? RAIN_HEAVY_MIN_MS : RAIN_LIGHT_MIN_MS;
+  const hi = heavy ? RAIN_HEAVY_MAX_MS : RAIN_LIGHT_MAX_MS;
   const dur = lo + Math.random() * (hi - lo);
   rainCycleTimer = setTimeout(() => {
     if (uiState.rainMode !== 'cycle') return; // mode changed under us
-    uiState.rainPhase = uiState.rainPhase === 'on' ? 'off' : 'on';
-    adapter?.setParam('bed.rain.level', rainTargetDb(), RAIN_FADE_MS);
+    uiState.rainPhase = uiState.rainPhase === 'heavy' ? 'light' : 'heavy';
+    adapter?.setParam('bed.rain.level', rainTargetDb(), RAIN_CYCLE_FADE_MS);
     scheduleNextRainPhase();
   }, dur);
 }
@@ -310,23 +326,29 @@ function applyRainMode(): void {
   const btn = $<HTMLButtonElement>('rain');
   btn.classList.toggle('active', uiState.rainMode !== 'off');
   btn.classList.toggle('cycle', uiState.rainMode === 'cycle');
-  btn.textContent = uiState.rainMode === 'cycle' ? 'rain · cycle' : 'rain';
+  btn.textContent = uiState.rainMode === 'cycle' ? 'cycle' : 'rain';
 
   if (uiState.rainMode === 'cycle') {
-    // Start the cycle from "off" so the first audible transition is a
-    // fade-in — feels less abrupt than yanking the steady "on" state.
-    uiState.rainPhase = 'off';
-    adapter?.setParam('bed.rain.level', rainTargetDb(), RAIN_FADE_MS);
+    adapter?.setParam('bed.rain.level', rainTargetDb(), RAIN_TOGGLE_FADE_MS);
     clearRainCycle();
     scheduleNextRainPhase();
   } else {
     clearRainCycle();
-    adapter?.setParam('bed.rain.level', rainTargetDb(), RAIN_FADE_MS);
+    adapter?.setParam('bed.rain.level', rainTargetDb(), RAIN_TOGGLE_FADE_MS);
   }
 }
 
 $<HTMLButtonElement>('rain').addEventListener('click', () => {
-  uiState.rainMode = uiState.rainMode === 'off' ? 'on' : uiState.rainMode === 'on' ? 'cycle' : 'off';
+  const prev = uiState.rainMode;
+  const next: RainMode = prev === 'off' ? 'on' : prev === 'on' ? 'cycle' : 'off';
+  // Cycle entry: start at the opposite of the current audible level so the
+  // click always produces an audible change. Off→cycle kicks in at heavy;
+  // on→cycle eases off to light. Within-cycle phase flips stay randomized
+  // (the next 2–8 min phase), so the cycle still varies organically.
+  if (next === 'cycle') {
+    uiState.rainPhase = prev === 'off' ? 'heavy' : 'light';
+  }
+  uiState.rainMode = next;
   applyRainMode();
 });
 

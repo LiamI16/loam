@@ -14,6 +14,11 @@
       --ink: #b6a596;
       --ink-faint: #6f6358;
       --line: #2a221c;
+      /* Deeper, redder counterpart to ember for the rain-cycle highlight —
+         same warm family, distinct hue so it reads as a mode shift rather
+         than a brightness change. */
+      --rain-cycle: #c75a3a;
+      --rain-cycle-dim: #5e2a1a;
     }
     * { box-sizing: border-box; }
     html, body { height: 100%; }
@@ -206,13 +211,35 @@
       border-radius: 10px;
       background: transparent;
       cursor: pointer;
-      transition: all 0.25s ease;
+      /* Longer duration on the color-bearing properties so transitioning
+         from on→cycle (warm→cool) reads as a deliberate mode shift rather
+         than a snap. `all` would over-eagerly slow hover/text changes too. */
+      transition:
+        background-color 0.5s ease,
+        border-color 0.5s ease,
+        color 0.35s ease,
+        box-shadow 0.5s ease;
     }
     .tog.active {
       color: var(--bg);
       background: var(--ember);
       border-color: var(--ember);
       box-shadow: 0 0 16px rgba(232,163,90,0.25);
+    }
+    /* Cycle: deeper terracotta-red, distinct from the steady ember "on"
+       state. Slow swell mirrors the audible intensity modulation. */
+    .tog.active.cycle {
+      background: var(--rain-cycle);
+      border-color: var(--rain-cycle);
+      box-shadow: 0 0 16px rgba(199,90,58,0.28);
+      animation: togCycle 6s ease-in-out infinite;
+    }
+    @keyframes togCycle {
+      0%, 100% { box-shadow: 0 0 12px rgba(199,90,58,0.20); opacity: 0.85; }
+      50%      { box-shadow: 0 0 22px rgba(199,90,58,0.50); opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .tog.active.cycle { animation: none; }
     }
 
     /* ── seed area ── */
