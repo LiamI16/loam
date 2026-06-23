@@ -52,7 +52,24 @@ let initialised = false;
 let playing = false;
 let adapter: ToneAudioAdapter | null = null;
 let engine: EmberEngine | null = null;
-const uiState = { rain: false, vinyl: true };
+// Rain has three modes: 'off' (silent), 'on' (steady), 'cycle' (fades in
+// and out on randomized intervals so it feels like a passing shower rather
+// than a constant rain). `rainPhase` tracks the current cycle phase so we
+// can re-apply it after a reseed or first play.
+type RainMode = 'off' | 'on' | 'cycle';
+const uiState: { rainMode: RainMode; rainPhase: 'on' | 'off'; vinyl: boolean } = {
+  rainMode: 'off',
+  rainPhase: 'off',
+  vinyl: true,
+};
+const RAIN_ON_DB = -33;
+const RAIN_OFF_DB = -60; // -∞ would break rampTo; -60 dB is inaudible
+
+function rainTargetDb(): number {
+  if (uiState.rainMode === 'on') return RAIN_ON_DB;
+  if (uiState.rainMode === 'cycle') return uiState.rainPhase === 'on' ? RAIN_ON_DB : RAIN_OFF_DB;
+  return RAIN_OFF_DB;
+}
 
 // ── audio init ────────────────────────────────────────────────────
 function buildEngine(seedValue: bigint): EmberEngine {
@@ -76,7 +93,7 @@ function buildAudio(seedValue: bigint): { adapter: ToneAudioAdapter; engine: Emb
   // Apply current UI slider values to the chain on init
   a.setParam('master.volume', volToDb(Number($<HTMLInputElement>('vol').value) / 100));
   a.setParam('master.warmth', warmHz(Number($<HTMLInputElement>('warm').value) / 100));
-  a.setParam('bed.rain.level', uiState.rain ? -28 : -Number.POSITIVE_INFINITY);
+  a.setParam('bed.rain.level', rainTargetDb());
 
   return { adapter: a, engine: e };
 }
@@ -259,10 +276,58 @@ makeEditable('speedVal', 'speed', (t) => {
   return Number.isNaN(n) ? null : n * 100;
 });
 
-$<HTMLButtonElement>('rain').addEventListener('click', (e) => {
-  uiState.rain = !uiState.rain;
-  (e.target as HTMLButtonElement).classList.toggle('active', uiState.rain);
-  adapter?.setParam('bed.rain.level', uiState.rain ? -33 : -Number.POSITIVE_INFINITY);
+// ── rain: off → on → cycle → off ─────────────────────────────────
+// Cycle = randomized on/off phases with smooth fades. Tunable here:
+const RAIN_FADE_MS = 8_000;
+const RAIN_ON_MIN_MS = 30_000;
+const RAIN_ON_MAX_MS = 90_000;
+const RAIN_OFF_MIN_MS = 20_000;
+const RAIN_OFF_MAX_MS = 50_000;
+
+let rainCycleTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearRainCycle(): void {
+  if (rainCycleTimer !== null) {
+    clearTimeout(rainCycleTimer);
+    rainCycleTimer = null;
+  }
+}
+
+function scheduleNextRainPhase(): void {
+  const onPhase = uiState.rainPhase === 'on';
+  const lo = onPhase ? RAIN_ON_MIN_MS : RAIN_OFF_MIN_MS;
+  const hi = onPhase ? RAIN_ON_MAX_MS : RAIN_OFF_MAX_MS;
+  const dur = lo + Math.random() * (hi - lo);
+  rainCycleTimer = setTimeout(() => {
+    if (uiState.rainMode !== 'cycle') return; // mode changed under us
+    uiState.rainPhase = uiState.rainPhase === 'on' ? 'off' : 'on';
+    adapter?.setParam('bed.rain.level', rainTargetDb(), RAIN_FADE_MS);
+    scheduleNextRainPhase();
+  }, dur);
+}
+
+function applyRainMode(): void {
+  const btn = $<HTMLButtonElement>('rain');
+  btn.classList.toggle('active', uiState.rainMode !== 'off');
+  btn.classList.toggle('cycle', uiState.rainMode === 'cycle');
+  btn.textContent = uiState.rainMode === 'cycle' ? 'rain · cycle' : 'rain';
+
+  if (uiState.rainMode === 'cycle') {
+    // Start the cycle from "off" so the first audible transition is a
+    // fade-in — feels less abrupt than yanking the steady "on" state.
+    uiState.rainPhase = 'off';
+    adapter?.setParam('bed.rain.level', rainTargetDb(), RAIN_FADE_MS);
+    clearRainCycle();
+    scheduleNextRainPhase();
+  } else {
+    clearRainCycle();
+    adapter?.setParam('bed.rain.level', rainTargetDb(), RAIN_FADE_MS);
+  }
+}
+
+$<HTMLButtonElement>('rain').addEventListener('click', () => {
+  uiState.rainMode = uiState.rainMode === 'off' ? 'on' : uiState.rainMode === 'on' ? 'cycle' : 'off';
+  applyRainMode();
 });
 
 $<HTMLButtonElement>('vinyl').addEventListener('click', (e) => {
@@ -272,16 +337,33 @@ $<HTMLButtonElement>('vinyl').addEventListener('click', (e) => {
 });
 
 // ── seed input + roll + copy ─────────────────────────────────────
-async function reseed(newSeed: bigint): Promise<void> {
+// Apply a seed to the running engine + UI, without touching history.
+// Shared by reseed (which also writes the URL) and popstate (where the
+// URL already reflects the target, so only the apply half is needed).
+async function applySeed(newSeed: bigint): Promise<void> {
   currentSeed = newSeed;
-
-  // Permalink without reload — preserves slider state.
-  const url = new URL(window.location.href);
-  url.searchParams.set('seed', newSeed.toString());
-  window.history.replaceState({}, '', url.toString());
   seedInput.value = newSeed.toString();
   await swapEngine(buildEngine(newSeed));
 }
+
+// Reseed from an explicit user action (roll / R / seed-input enter).
+// Pushes a history entry by default so Back returns to the previous seed;
+// pass 'replace' to overwrite the current entry instead (initial promote).
+async function reseed(newSeed: bigint, history: 'push' | 'replace' = 'push'): Promise<void> {
+  // Permalink without reload — preserves slider state.
+  const url = new URL(window.location.href);
+  url.searchParams.set('seed', newSeed.toString());
+  if (history === 'push') window.history.pushState({}, '', url.toString());
+  else window.history.replaceState({}, '', url.toString());
+  await applySeed(newSeed);
+}
+
+// Back / Forward: the URL already carries the target seed, so re-apply it
+// without writing history (a write here would fight the navigation).
+window.addEventListener('popstate', () => {
+  const seed = seedFromUrl();
+  if (seed !== null && seed !== currentSeed) void applySeed(seed);
+});
 
 const DEFAULT_SEED_HINT = 'enter to reseed · r to roll · space to play';
 let seedHintTimer: ReturnType<typeof setTimeout> | null = null;

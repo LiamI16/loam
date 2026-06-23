@@ -257,15 +257,16 @@ thesis. Pull key/mode from the engine if exposed; BPM is already to hand.
 **Files:** `apps/web-demo/index.html` (readout element),
 `apps/web-demo/src/main.ts` (populate on build/reseed).
 
-#### 6. Browser history for rolls
+#### 6. Browser history for rolls — DONE
 
-`roll` and `reseed` use `replaceState`, so the Back button can't return
-to a seed you liked three rolls ago — one careless roll destroys a good
-seed forever. Use `pushState` on *explicit* reseed/roll (not on slider
-changes), and wire a `popstate` handler to re-apply the seed from the
-URL. Pairs naturally with #8 (favorites).
+Three-layer split in `main.ts`: `applySeed` (engine + UI swap, no URL),
+`reseed(seed, history='push'|'replace')` (URL write + applySeed), and a
+`popstate` handler that re-applies the URL's seed without writing history.
+Roll / R / seed-enter push one entry each (one entry per roll); Back/
+Forward swap seeds live via the existing fade path. Slider/toggle changes
+never touch history. Initial permalink promotion stays `replaceState`.
 
-**Files:** `apps/web-demo/src/main.ts` (reseed + popstate).
+**Files:** `apps/web-demo/src/main.ts` (applySeed + reseed + popstate).
 
 #### 7. Numeric entry for sliders — DONE
 
