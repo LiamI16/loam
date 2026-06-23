@@ -28,6 +28,10 @@ plugin, sharing one engine.
   chord-melody coupling formula, phrase concept, strategy menu).
   Read before any work in `melody-scheduler.ts`.
 - **`docs/event-protocol.md`** — typed engine↔adapter event contract.
+- **`docs/ember-util.md`** — shared scheduler/harmony numeric helpers
+  (`clamp01`, `mod12`, `nearestPitchClassInRange` in
+  `engines/ember/util.ts`). Check before re-deriving pitch-class /
+  clamp / nearest-pitch math in a scheduler.
 - **`docs/gaps.md`** — unresolved questions; check before assuming
   something's decided.
 - **Other `docs/*.md`** — discoverable via `ls docs/`. Read on demand
