@@ -32,6 +32,7 @@ import {
   type TransitionMatrix,
   voiceChord,
 } from './harmony/index.js';
+import { clamp01, nearestPitchClassInRange } from './util.js';
 
 /**
  * Chord comping scheduler. Pattern-menu model: each chord slot rolls
@@ -86,9 +87,11 @@ import {
  *   - `chord-micro`                — per-bar drop-a-voice rolls
  */
 
-/** Bass register for the pad root, MIDI C2 (36) – D3 (50). */
-const BASS_LOW = 36;
-const BASS_HIGH = 50;
+/** Register for the pad root (the lowest pad voice), MIDI C2 (36) – D3
+ * (50). Distinct from the bass *line* register in bass-scheduler — this
+ * is the pad's lowest voice, allowed slightly higher. */
+const PAD_ROOT_LOW = 36;
+const PAD_ROOT_HIGH = 50;
 
 /** Voicing register characteristics (carried over from prototype). */
 const REGISTER_WIDTH = 24;
@@ -509,25 +512,9 @@ function emitVoicing(
 function nearestRoot(pc: number, target: number | null): number {
   if (target === null) {
     let p = pc;
-    while (p < BASS_LOW) p += 12;
-    while (p > BASS_HIGH) p -= 12;
+    while (p < PAD_ROOT_LOW) p += 12;
+    while (p > PAD_ROOT_HIGH) p -= 12;
     return p;
   }
-  let best = -1;
-  let bestDist = Number.POSITIVE_INFINITY;
-  for (let p = BASS_LOW; p <= BASS_HIGH; p++) {
-    if (((p % 12) + 12) % 12 !== pc) continue;
-    const d = Math.abs(p - target);
-    if (d < bestDist) {
-      bestDist = d;
-      best = p;
-    }
-  }
-  return best;
-}
-
-function clamp01(v: number): number {
-  if (v < 0) return 0;
-  if (v > 1) return 1;
-  return v;
+  return nearestPitchClassInRange(pc, target, PAD_ROOT_LOW, PAD_ROOT_HIGH);
 }

@@ -1,3 +1,4 @@
+import { mod12, nearestPitchClassInRange } from '../util.js';
 import { type ChordSymbol, chordPitchClasses, type Quality } from './chords.js';
 
 /**
@@ -176,18 +177,9 @@ function placeFromScratch(
   const center = Math.floor((register.low + register.high) / 2);
   const out: number[] = [];
   for (const i of intervals) {
-    const pc = (((rootPc + i) % 12) + 12) % 12;
+    const pc = mod12(rootPc + i);
     // Nearest pitch to `center` with this pitch class, within register.
-    let best = -1;
-    let bestDist = Number.POSITIVE_INFINITY;
-    for (let p = register.low; p <= register.high; p++) {
-      if (((p % 12) + 12) % 12 !== pc) continue;
-      const d = Math.abs(p - center);
-      if (d < bestDist) {
-        bestDist = d;
-        best = p;
-      }
-    }
+    const best = nearestPitchClassInRange(pc, center, register.low, register.high);
     if (best >= 0) out.push(best);
   }
   return out.sort((a, b) => a - b);

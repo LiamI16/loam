@@ -6,6 +6,7 @@ import type { Rng } from '../../rng/rng.js';
 import type { Seed } from '../../rng/seed.js';
 import type { EngineState, SubScheduler } from './ember.js';
 import { type ChordSymbol, chordPitchClasses } from './harmony/index.js';
+import { clamp01, mod12, nearestPitchClassInRange } from './util.js';
 
 /**
  * Bass voice — a separate instrument from the pad, providing rhythmic
@@ -181,7 +182,9 @@ export class BassScheduler implements SubScheduler {
         const beat3Fires = this.rng.bernoulli(BEAT_3_PROB);
         const useFifth = this.rng.bernoulli(BEAT_3_FIFTH_PROB);
         if (beat3Fires) {
-          const pitch = useFifth ? nearestPitchInRange((root + 7) % 12, root) : root;
+          const pitch = useFifth
+            ? nearestPitchClassInRange(mod12(root + 7), root, BASS_LOW, BASS_HIGH)
+            : root;
           events.push({
             kind: 'note',
             channel: Channels.BASS,
@@ -209,7 +212,7 @@ export class BassScheduler implements SubScheduler {
       this.currentBassRoot = newLowestRoot;
       return;
     }
-    const currentPc = ((this.currentBassRoot % 12) + 12) % 12;
+    const currentPc = mod12(this.currentBassRoot);
     const newChordPcs = new Set(chordPitchClasses(chord));
     const canStay = newChordPcs.has(currentPc);
     if (!canStay) {
@@ -230,26 +233,8 @@ export class BassScheduler implements SubScheduler {
 
 /** Lowest MIDI pitch in [BASS_LOW, BASS_HIGH] with pitch class `pc`. */
 function lowestRoot(pc: number): number {
-  const basePc = ((BASS_LOW % 12) + 12) % 12;
-  const offset = (((pc - basePc) % 12) + 12) % 12;
+  const offset = mod12(pc - BASS_LOW);
   return BASS_LOW + offset;
-}
-
-/** Pick the MIDI pitch in [BASS_LOW, BASS_HIGH] with pitch class `pc`
- * closest to `target`. Used for beat-3 fifth so the fifth-of-root
- * sits near the current bass note. */
-function nearestPitchInRange(pc: number, target: number): number {
-  let best = -1;
-  let bestDist = Number.POSITIVE_INFINITY;
-  for (let p = BASS_LOW; p <= BASS_HIGH; p++) {
-    if (((p % 12) + 12) % 12 !== pc) continue;
-    const d = Math.abs(p - target);
-    if (d < bestDist) {
-      bestDist = d;
-      best = p;
-    }
-  }
-  return best;
 }
 
 /** Find the chord active at `time` from a time-sorted `chordSchedule`.
@@ -265,10 +250,4 @@ function chordAtTime(
     active = entry.chord;
   }
   return active;
-}
-
-function clamp01(v: number): number {
-  if (v < 0) return 0;
-  if (v > 1) return 1;
-  return v;
 }

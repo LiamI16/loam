@@ -27,6 +27,7 @@ import {
   type TransformationKind,
   transformGerm,
 } from './melody/index.js';
+import { mod12 } from './util.js';
 
 /**
  * Germ-driven melody scheduler — Phases 1-3 complete (Commits B–H).
@@ -543,7 +544,7 @@ function clampInt(v: number, lo: number, hi: number): number {
 
 function semitoneClash(pc: number, chordPcs: readonly number[]): boolean {
   for (const c of chordPcs) {
-    const d = (((pc - c) % 12) + 12) % 12;
+    const d = mod12(pc - c);
     if (d === 1 || d === 11) return true;
   }
   return false;

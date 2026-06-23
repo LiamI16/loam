@@ -3,6 +3,7 @@ import type { EngineEvent } from '../../events.js';
 import type { Rng } from '../../rng/rng.js';
 import type { Seed } from '../../rng/seed.js';
 import type { EngineState, SubScheduler } from './ember.js';
+import { clamp01 } from './util.js';
 
 /** 16-step boom-bap kick pattern (per prototype). */
 const KICK_SEQ: ReadonlyArray<0 | 1> = [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0];
@@ -236,10 +237,4 @@ export class DrumScheduler implements SubScheduler {
 
 function emptyBarVar(): BarVariations {
   return { kickSync: false, hatDrop: false, openHatStep: null, ghostSnareSteps: [] };
-}
-
-function clamp01(v: number): number {
-  if (v < 0) return 0;
-  if (v > 1) return 1;
-  return v;
 }

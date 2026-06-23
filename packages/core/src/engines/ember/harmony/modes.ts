@@ -22,6 +22,7 @@
  * → mode blending → reweighting + melody mode-awareness.
  */
 
+import { mod12 } from '../util.js';
 import type { ChordName } from './chords.js';
 import { CHORD_NAMES } from './chords.js';
 
@@ -313,7 +314,7 @@ export function modeMidiBag(mode: Mode, low = 69, high = 84): number[] {
   const pcs = MODE_POOLS[mode].scalePcs;
   const out: number[] = [];
   for (let p = low; p <= high; p++) {
-    const pc = ((p % 12) + 12) % 12;
+    const pc = mod12(p);
     if (pcs.includes(pc)) out.push(p);
   }
   return out;
