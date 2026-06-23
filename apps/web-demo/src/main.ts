@@ -182,6 +182,14 @@ stage.addEventListener('keydown', (e) => {
   }
 });
 
+// ── pause CSS animations when the tab is hidden ───────────────────
+// Pairs with the body[data-hidden=true] rule. The Web Audio scheduler keeps
+// running (it lives in a worker), but the visual animations are wasted work
+// while invisible and can produce a paint catch-up on resume.
+document.addEventListener('visibilitychange', () => {
+  document.body.dataset.hidden = String(document.hidden);
+});
+
 // ── stop buttons from latching focus on mouse click ───────────────
 // Default browser behavior focuses a button when you click it, which
 // means subsequent spacebar presses re-activate that button instead of

@@ -4,8 +4,12 @@ import type { ChannelRegistration, ParamSetter } from './types.js';
 
 /** How far ahead of the audio clock the engine pre-schedules, in seconds. */
 const LOOKAHEAD_SEC = 0.2;
-/** How often the adapter polls the engine for the next chunk of events. */
-const TICK_INTERVAL_MS = 25;
+/** How often the adapter polls the engine for the next chunk of events.
+ * 50 ms is comfortably below the 200 ms lookahead (so we always stay ahead
+ * of the audio clock) while halving the main-thread work vs the previous
+ * 25 ms — reduces interaction jank (scroll, tab-switch) without audible
+ * effect on scheduling fidelity. */
+const TICK_INTERVAL_MS = 50;
 /** Master-bus fade-out time when stop() is called. ~10 ms is short enough
  * to feel instant and long enough to avoid an audible click. */
 const STOP_FADE_SEC = 0.01;

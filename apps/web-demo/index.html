@@ -466,6 +466,16 @@
     }
     .footer span { color: var(--ember-dim); }
 
+    /* Pause every infinite CSS animation when the tab is hidden. Browsers
+       already throttle rendering, but they don't *pause* animation timelines —
+       on tab-switch-back there can be a layout/paint catch-up. This
+       eliminates that, which reduces interaction jank around tab switches. */
+    body[data-hidden="true"] *,
+    body[data-hidden="true"] *::before,
+    body[data-hidden="true"] *::after {
+      animation-play-state: paused !important;
+    }
+
     @media (prefers-reduced-motion: reduce) {
       .ember-stage.on .ember, .ember-stage.on .glow { animation: none; }
       .ember-stage.on .ember { opacity: 0.92; }
