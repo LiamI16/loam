@@ -24,7 +24,7 @@ describe('ChordScheduler (comping)', () => {
     const pad = events.filter((e) => e.kind === 'note' && e.channel === Channels.PAD);
     expect(pad).toHaveLength(2);
     const [a, b] = pad as Array<{ pitch: number }>;
-    expect(b.pitch - a.pitch).toBe(7);
+    expect(b!.pitch - a!.pitch).toBe(7);
   });
 
   it('chord-change boundaries land on bar grid (multiples of one bar)', () => {

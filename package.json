@@ -16,11 +16,14 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",
+    "deadcode": "knip",
     "format": "biome format --write .",
     "fix": "biome check --write ."
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.0.0"
+    "@biomejs/biome": "^2.0.0",
+    "knip": "^5.0.0"
   }
 }

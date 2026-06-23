@@ -44,7 +44,13 @@ describe('MarkovChordWalk', () => {
     // Lydian excludes Am11 and the borrowed Bbmaj7; from Am7's row
     // those are filtered out, leaving Dm7/Fmaj7/Cmaj7/Em7/Am9/G7.
     const w = new MarkovChordWalk(HAND_MATRIX, Seed.from(99n).child('harmony/markov').rng(), 'Am7');
-    const lydianWeights = { Fmaj7: 0.9, Fmaj9: 1.0, Cmaj7: 0.7, Cmaj7s11: 0.95, Dm7: 0.55 };
+    const lydianWeights: Partial<Record<ChordName, number>> = {
+      Fmaj7: 0.9,
+      Fmaj9: 1.0,
+      Cmaj7: 0.7,
+      Cmaj7s11: 0.95,
+      Dm7: 0.55,
+    };
     for (let i = 0; i < 20; i++) {
       const next = w.next(lydianWeights);
       expect(lydianWeights[next] ?? 0).toBeGreaterThan(0);

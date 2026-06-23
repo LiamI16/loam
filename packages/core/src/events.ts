@@ -27,7 +27,7 @@ export interface NoteEvent {
 
 export interface ParamEvent {
   kind: 'param';
-  /** Dotted path: 'warmth.cutoff', 'rhodes.volume', 'fx.chorus.depth'. */
+  /** Dotted path: 'master.warmth', 'fx.evoFilter.cutoff', 'fx.chorus.depth'. */
   target: string;
   value: number;
   /** Glide duration in ms. Omit / 0 for instantaneous. */

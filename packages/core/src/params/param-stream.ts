@@ -17,7 +17,7 @@ export interface ParamStream {
 /** A parameter that doesn't move. Returns `value` regardless of time. */
 export class StaticParam implements ParamStream {
   constructor(public value: number) {}
-  evaluate(): number {
+  evaluate(_time: number): number {
     return this.value;
   }
 }

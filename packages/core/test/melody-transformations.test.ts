@@ -44,11 +44,11 @@ describe('melody transformations', () => {
     const rng = Seed.from(1n).rng();
     const out = transformGerm('transpose', sampleGerm, rng);
     expect(out).toHaveLength(sampleGerm.length);
-    const delta = out[0].scaleDegreeOffset - sampleGerm[0].scaleDegreeOffset;
+    const delta = out[0]!.scaleDegreeOffset - sampleGerm[0]!.scaleDegreeOffset;
     expect(delta).not.toBe(0);
     for (let i = 0; i < out.length; i++) {
-      expect(out[i].scaleDegreeOffset).toBe(sampleGerm[i].scaleDegreeOffset + delta);
-      expect(out[i].durationBeats).toBe(sampleGerm[i].durationBeats);
+      expect(out[i]!.scaleDegreeOffset).toBe(sampleGerm[i]!.scaleDegreeOffset + delta);
+      expect(out[i]!.durationBeats).toBe(sampleGerm[i]!.durationBeats);
     }
   });
 
@@ -89,9 +89,9 @@ describe('melody transformations', () => {
     const aug = transformGerm('augment', sampleGerm, rng);
     const dim = transformGerm('diminish', sampleGerm, rng);
     for (let i = 0; i < sampleGerm.length; i++) {
-      expect(aug[i].durationBeats).toBeCloseTo(sampleGerm[i].durationBeats * 2, 9);
-      expect(dim[i].durationBeats).toBeCloseTo(sampleGerm[i].durationBeats * 0.5, 9);
-      expect(aug[i].scaleDegreeOffset).toBe(sampleGerm[i].scaleDegreeOffset);
+      expect(aug[i]!.durationBeats).toBeCloseTo(sampleGerm[i]!.durationBeats * 2, 9);
+      expect(dim[i]!.durationBeats).toBeCloseTo(sampleGerm[i]!.durationBeats * 0.5, 9);
+      expect(aug[i]!.scaleDegreeOffset).toBe(sampleGerm[i]!.scaleDegreeOffset);
     }
   });
 
@@ -100,7 +100,7 @@ describe('melody transformations', () => {
     const out = transformGerm('invert', sampleGerm, rng);
     const anchor = sampleGerm[0].scaleDegreeOffset;
     for (let i = 0; i < out.length; i++) {
-      expect(out[i].scaleDegreeOffset).toBe(2 * anchor - sampleGerm[i].scaleDegreeOffset);
+      expect(out[i]!.scaleDegreeOffset).toBe(2 * anchor - sampleGerm[i]!.scaleDegreeOffset);
     }
   });
 

@@ -69,7 +69,8 @@ const RAIN_SILENT_DB = -60; // dedicated "off" mode; -∞ would break rampTo
 
 function rainTargetDb(): number {
   if (uiState.rainMode === 'on') return RAIN_STEADY_DB;
-  if (uiState.rainMode === 'cycle') return uiState.rainPhase === 'heavy' ? RAIN_HEAVY_DB : RAIN_LIGHT_DB;
+  if (uiState.rainMode === 'cycle')
+    return uiState.rainPhase === 'heavy' ? RAIN_HEAVY_DB : RAIN_LIGHT_DB;
   return RAIN_SILENT_DB;
 }
 
@@ -217,7 +218,11 @@ $<HTMLInputElement>('speed').addEventListener('input', (e) => {
 // just set the slider and re-dispatch its 'input' event, so the existing
 // slider handler does all the real work (param update + label refresh).
 // `parse` maps typed text → a slider value (or null to reject).
-function makeEditable(valueId: string, sliderId: string, parse: (text: string) => number | null): void {
+function makeEditable(
+  valueId: string,
+  sliderId: string,
+  parse: (text: string) => number | null,
+): void {
   const valEl = $<HTMLElement>(valueId);
   const slider = $<HTMLInputElement>(sliderId);
   valEl.classList.add('editable');
@@ -268,8 +273,13 @@ function makeEditable(valueId: string, sliderId: string, parse: (text: string) =
     };
 
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); commit(true); }
-      else if (e.key === 'Escape') { e.preventDefault(); commit(false); }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commit(true);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        commit(false);
+      }
     });
     input.addEventListener('blur', () => commit(true));
   });
