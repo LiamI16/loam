@@ -14,6 +14,17 @@ const TICK_INTERVAL_MS = 50;
  * to feel instant and long enough to avoid an audible click. */
 const STOP_FADE_SEC = 0.01;
 
+/** Swap Tone's default audio context for one with `latencyHint: 'playback'`
+ * — a ~250–500 ms buffer that survives scroll/background-tab hiccups without
+ * audible glitches. The default `'interactive'` hint targets ~10–25 ms,
+ * which is too tight for sustained ambient playback. Idempotent. */
+let toneContextConfigured = false;
+function configureToneContextOnce(): void {
+  if (toneContextConfigured) return;
+  toneContextConfigured = true;
+  Tone.setContext(new Tone.Context({ latencyHint: 'playback' }));
+}
+
 /** Inline Web Worker source. The worker exists for one reason: browsers
  * throttle main-thread setInterval to ~1 Hz when a tab/window is hidden or
  * minimized, which starves our 200 ms scheduling lookahead and causes audible
@@ -68,6 +79,11 @@ export class ToneAudioAdapter {
   private latestScheduledAudioTime = 0;
 
   constructor() {
+    // Configure the global Tone context with a playback-grade buffer before
+    // creating any nodes — must happen first because attached nodes are
+    // bound to whatever context is active at construction. Guarded so
+    // multiple adapter instances don't spawn multiple contexts.
+    configureToneContextOnce();
     this.out = new Tone.Gain(0).toDestination();
     this.master = new Tone.Volume(0).connect(this.out);
   }
