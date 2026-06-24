@@ -305,6 +305,22 @@ export class ChordScheduler implements SubScheduler {
     this.state.chordSchedule = [];
     this.state.structuralMomentTimes = [];
 
+    // Seed the schedule with the chord already active at the window
+    // start. `chordSchedule` lists chord-change boundaries *within this
+    // pass*, but downstream schedulers (BassScheduler) need the active
+    // chord at every beat — including windows that contain no chord
+    // change. Without this, small adapter lookahead windows (~50 ms,
+    // far shorter than a 6–13 s slot) leave the schedule empty for most
+    // passes and bass falls silent. `time: -Infinity` so it's the
+    // baseline for any `chordAtTime` query; real boundaries pushed below
+    // override it from their bar onward.
+    if (this.currentChord !== null) {
+      this.state.chordSchedule.push({
+        time: Number.NEGATIVE_INFINITY,
+        chord: this.currentChord,
+      });
+    }
+
     while (this.nextBarIdx * this.secondsPerBar < to) {
       const barTime = this.nextBarIdx * this.secondsPerBar;
       const barInSlot = this.nextBarIdx - this.currentSlotStartBar;
