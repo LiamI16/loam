@@ -687,21 +687,32 @@ function setSeedHint(text: string, autoRevertMs = 1500): void {
   }, autoRevertMs);
 }
 
-seedInput.addEventListener('keydown', (e) => {
-  if (e.key !== 'Enter') return;
+// Commit whatever's typed in the seed box — fired on both Enter and blur
+// (clicking away), so there's no hidden "press Enter" requirement. Reseeds
+// only when the value actually changed; on an invalid entry, snaps the box
+// back to the current seed so it never lingers in a broken state.
+function commitSeed(): void {
   const raw = seedInput.value.trim();
   let parsed: bigint;
   try {
     parsed = BigInt(raw);
   } catch {
     setSeedHint('invalid · must be an integer');
+    seedInput.value = currentSeed.toString();
     return;
   }
-  // Drop focus so the user can immediately press space to play/pause
-  // without having to click outside the input first.
-  seedInput.blur();
+  if (parsed === currentSeed) return;
   void reseed(parsed);
+}
+
+seedInput.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  // Drop focus so the user can immediately press space to play/pause
+  // without having to click outside the input first. The resulting blur
+  // does the actual commit, so we don't reseed twice.
+  seedInput.blur();
 });
+seedInput.addEventListener('blur', commitSeed);
 
 $<HTMLButtonElement>('roll').addEventListener('click', () => {
   void reseed(randomSeed());
