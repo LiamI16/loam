@@ -147,8 +147,8 @@
     .ember-stage:focus-visible { outline: none; }
 
     .hint {
-      font-size: 11px;
-      letter-spacing: 0.28em;
+      font-size: 13px;
+      letter-spacing: 0.3em;
       text-transform: uppercase;
       color: var(--ink-faint);
       height: 14px;
@@ -165,7 +165,7 @@
       pointer-events: none;
       z-index: 50;
       font-size: clamp(15px, 2.6vw, 20px);
-      letter-spacing: 0.32em;
+      letter-spacing: 0.3em;
       /* Compensate the trailing letter-spacing (half of it) so the glyphs
          sit centered over the orb, not shifted left. */
       text-indent: 0.16em;
@@ -266,7 +266,7 @@
       text-align: center;
       padding: 10px 0;
       font-size: 10px;
-      letter-spacing: 0.2em;
+      letter-spacing: 0.22em;
       text-transform: uppercase;
       color: var(--ink-faint);
       border: 1px solid var(--line);
@@ -330,12 +330,41 @@
       padding: 6px 10px;
       border-radius: 6px;
       font-family: inherit;
-      font-size: 11px;
+      /* Subtle lift above the 9-11px label band so the seed reads as the
+         protagonist without dominating. Medium weight does the rest of the
+         hierarchy work (labels stay 400). Tabular figures keep it steady. */
+      font-size: 12px;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
       width: 240px;
       text-align: center;
       outline: none;
     }
     .seed-input:focus { border-color: var(--ember-dim); }
+    /* Wraps the seed input + flanking pin-cycle chevrons. The chevrons stay
+       hidden (`[hidden]`) until there are 2+ pins to cycle between, so the
+       row collapses back to a bare input in the default state. */
+    .seed-input-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .pin-chevron {
+      background: transparent;
+      border: 0;
+      color: var(--ink-faint);
+      font-family: inherit;
+      font-size: 18px;
+      line-height: 1;
+      padding: 4px 6px;
+      cursor: pointer;
+      opacity: 0.35;
+      transition: opacity 0.18s ease, color 0.18s ease;
+    }
+    .pin-chevron:hover, .pin-chevron:focus-visible { opacity: 1; color: var(--ember); outline: none; }
+    /* Reserve the chevron's slot with visibility:hidden (not [hidden]) so
+       the seed input doesn't jump when going from 1 to 2 pins. */
+    .pin-chevron.is-empty { visibility: hidden; pointer-events: none; }
     .seed-actions { display: flex; gap: 6px; width: 240px; }
     .seed-btn {
       flex: 1;
@@ -346,17 +375,44 @@
       border-radius: 6px;
       font-family: inherit;
       font-size: 9px;
-      letter-spacing: 0.25em;
+      letter-spacing: 0.22em;
       text-transform: uppercase;
       cursor: pointer;
       transition: color 0.2s ease, border-color 0.2s ease;
     }
     .seed-btn:hover { color: var(--ember); border-color: var(--ember-dim); }
+    /* The heart-shaped pin button is a fixed-width icon button rather than
+       flex:1 with the text actions; keeps roll/copy at their familiar size. */
+    .seed-btn-icon {
+      flex: 0 0 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 0;
+    }
+    .seed-btn-icon svg {
+      width: 13px;
+      height: 13px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.5;
+      transition: fill 0.2s ease, stroke 0.2s ease;
+    }
+    .seed-btn-icon[aria-pressed="true"] {
+      color: var(--ember);
+      border-color: var(--ember-dim);
+    }
+    .seed-btn-icon[aria-pressed="true"] svg { fill: currentColor; }
     .seed-hint {
-      font-size: 9px;
+      font-size: 10px;
       color: var(--ink-faint);
       min-height: 12px; /* reserve room for transient feedback so layout doesn't jump */
+      text-align: center;
+      max-width: 100%;
     }
+    /* Keep each key + its action glued together so wrapping breaks between
+       pairs at the · separators ("space to play" stays a unit). */
+    .seed-hint .hint-pair { white-space: nowrap; }
 
     /* ── extras menu: trigger + slide-in side drawer ── */
     .menu-btn {
@@ -448,7 +504,7 @@
 
     .drawer-title {
       font-size: 10px;
-      letter-spacing: 0.32em;
+      letter-spacing: 0.3em;
       text-transform: uppercase;
       color: var(--ink-faint);
       margin: 0 0 4px;
@@ -485,7 +541,7 @@
       align-items: center;
       gap: 10px;
       font-size: 11px;
-      letter-spacing: 0.24em;
+      letter-spacing: 0.22em;
       text-transform: uppercase;
       color: var(--ember);
     }
@@ -497,6 +553,296 @@
       line-height: 1.5;
       letter-spacing: 0.03em;
     }
+
+    /* ── favorites section ── */
+    /* Lives above the theme row. Hidden via `[hidden]` until there's at
+       least one pin or folder, so the empty drawer reads identically to
+       pre-favorites. Rendered entirely from main.ts (`renderFavorites`).
+       Becomes the drawer's flex-growing scroll region — its #favList
+       scrolls internally while the title/cards/theme/footer stay fixed. */
+    .fav-section {
+      margin-top: 6px;
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 80px; /* never collapse to nothing */
+      overflow: hidden;
+    }
+    #favList {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      /* Reserve room for the scrollbar so the row hover highlight isn't
+         clipped by it. `padding-right` keeps the rows inside the scrollbar
+         lane; the thumb sits in the reserved gutter. */
+      padding-right: 6px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--line) transparent;
+    }
+    #favList::-webkit-scrollbar { width: 6px; }
+    #favList::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+    .fav-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 0 0 8px;
+    }
+    .fav-header-title {
+      font-size: 9px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      opacity: 0.7;
+    }
+    .fav-new-folder {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--ink-faint);
+      font-family: inherit;
+      font-size: 9px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: color 0.18s ease, border-color 0.18s ease;
+    }
+    .fav-new-folder:hover { color: var(--ember); border-color: var(--ember-dim); }
+
+    .fav-folder { margin-bottom: 6px; }
+    .fav-folder-head {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 2px;
+      color: var(--ink-faint);
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    .fav-folder-head:hover { color: var(--ember); }
+    .fav-folder-twist {
+      display: inline-block;
+      width: 10px;
+      font-size: 10px;
+      transition: transform 0.18s ease;
+    }
+    .fav-folder.collapsed .fav-folder-twist { transform: rotate(-90deg); }
+    .fav-folder-name {
+      flex: 1;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: lowercase;
+      background: transparent;
+      border: 0;
+      color: inherit;
+      font-family: inherit;
+      padding: 2px 0;
+      outline: none;
+    }
+    .fav-folder-name:focus { color: var(--ember); }
+    .fav-folder-count {
+      font-size: 9px;
+      letter-spacing: 0.22em;
+      color: var(--ink-faint);
+      opacity: 0.6;
+    }
+    .fav-folder-del {
+      background: transparent;
+      border: 0;
+      color: var(--ink-faint);
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      padding: 2px 4px;
+      opacity: 0;
+      transition: opacity 0.18s ease, color 0.18s ease;
+    }
+    .fav-folder-head:hover .fav-folder-del { opacity: 0.5; }
+    .fav-folder-del:hover { opacity: 1 !important; color: var(--ember); }
+    .fav-folder.collapsed .fav-folder-body { display: none; }
+    .fav-folder-body { padding-left: 14px; }
+
+    .fav-pin {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 6px;
+      border-radius: 5px;
+      cursor: pointer;
+      color: var(--ink);
+      transition: background 0.18s ease;
+    }
+    .fav-pin:hover { background: color-mix(in srgb, var(--ember) 6%, transparent); }
+    .fav-pin.is-current { color: var(--ember); }
+    .fav-pin-main { flex: 1; min-width: 0; }
+    .fav-pin-seed {
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.03em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .fav-pin-meta {
+      font-size: 9px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      opacity: 0.7;
+      margin-left: 6px;
+    }
+    .fav-pin-note {
+      display: block;
+      font-size: 10px;
+      color: var(--ink-faint);
+      opacity: 0.75;
+      font-style: italic;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
+      background: transparent;
+      border: 0;
+      width: 100%;
+      font-family: inherit;
+      padding: 0;
+      outline: none;
+    }
+    /* Placeholder is the discoverability cue: dotted-underlined "+ add note"
+       at low opacity, brightening on row hover so the affordance reads as
+       editable rather than decorative. */
+    .fav-pin-note::placeholder {
+      color: var(--ink-faint);
+      opacity: 0.5;
+      font-style: normal;
+      letter-spacing: 0.04em;
+    }
+    .fav-pin:hover .fav-pin-note::placeholder { opacity: 0.85; color: var(--ember-dim); }
+    .fav-pin-note:focus { color: var(--ember); opacity: 1; }
+    .fav-pin-note:focus::placeholder { opacity: 0.4; }
+    .fav-pin-actions {
+      display: flex;
+      gap: 2px;
+      opacity: 0;
+      transition: opacity 0.18s ease;
+    }
+    .fav-pin:hover .fav-pin-actions, .fav-pin:focus-within .fav-pin-actions { opacity: 1; }
+    .fav-pin-act {
+      background: transparent;
+      border: 0;
+      color: var(--ink-faint);
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+      padding: 2px 5px;
+      border-radius: 4px;
+      transition: color 0.18s ease, background 0.18s ease;
+    }
+    .fav-pin-act:hover { color: var(--ember); background: color-mix(in srgb, var(--ember) 8%, transparent); }
+    .fav-pin-act-icon { display: inline-flex; align-items: center; justify-content: center; padding: 3px 5px; }
+    .fav-pin-act-icon svg {
+      width: 12px;
+      height: 12px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.5;
+    }
+    /* Move-to-folder popup. Lives at body level (position: fixed) so it
+       escapes the #favList overflow clip — JS computes the coords and
+       flips it above the anchor when it would extend past the viewport. */
+    .fav-move-popup {
+      position: fixed;
+      background: var(--bg2);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 4px;
+      display: none;
+      z-index: 20;
+      min-width: 140px;
+      max-height: 60vh;
+      overflow-y: auto;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.5);
+    }
+    .fav-move-popup.show { display: block; }
+    .fav-move-opt {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      border: 0;
+      color: var(--ink);
+      font-family: inherit;
+      font-size: 10px;
+      padding: 5px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .fav-move-opt:hover { background: color-mix(in srgb, var(--ember) 10%, transparent); color: var(--ember); }
+    /* Inline create-folder option in the move popup, set off with a hairline. */
+    .fav-move-new {
+      margin-top: 4px;
+      border-top: 1px solid var(--line);
+      padding-top: 7px;
+      color: var(--ink-faint);
+      font-style: italic;
+    }
+    .fav-move-new:hover { color: var(--ember); }
+
+    /* Inline folder-delete confirm. The folder head morphs into a
+       compact "delete <name>? · cancel · delete" pill until resolved. */
+    .fav-folder-head.confirm {
+      gap: 8px;
+      background: color-mix(in srgb, var(--ember) 6%, transparent);
+      border: 1px solid color-mix(in srgb, var(--ember-dim) 70%, transparent);
+      padding: 5px 8px;
+    }
+    .fav-folder-confirm-text {
+      flex: 1;
+      font-size: 10px;
+      color: var(--ink);
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .fav-confirm-btn {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--ink-faint);
+      font-family: inherit;
+      font-size: 9px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+    }
+    .fav-confirm-btn.confirm-no:hover {
+      color: var(--ink);
+      border-color: var(--ink-faint);
+    }
+    .fav-confirm-btn.confirm-yes {
+      color: var(--ember);
+      border-color: var(--ember-dim);
+    }
+    .fav-confirm-btn.confirm-yes:hover {
+      background: color-mix(in srgb, var(--ember) 14%, transparent);
+    }
+
+    /* Twist is now the only collapse trigger — give it the pointer
+       affordance so the rest of the head reads as inert chrome. */
+    .fav-folder-twist {
+      cursor: pointer;
+      background: transparent;
+      border: 0;
+      color: inherit;
+      font-family: inherit;
+      padding: 0;
+    }
+    .fav-folder-twist:hover { color: var(--ember); }
+    .fav-folder-head { cursor: default; }
 
     /* ── theme swatch row ── */
     .theme-row {
@@ -544,6 +890,7 @@
     }
 
     .drawer-foot {
+      flex-shrink: 0;
       margin-top: auto;
       padding-top: 18px;
       font-size: 9px;
@@ -553,6 +900,10 @@
       opacity: 0.6;
       line-height: 1.6;
     }
+    /* Keep each shortcut + its label glued together so wrapping breaks
+       between pairs, not between the key and its word ("Esc close"
+       stays a unit, separator floats to the next line). */
+    .drawer-foot .kbd-pair { white-space: nowrap; }
     .drawer-foot kbd {
       font-family: inherit;
       color: var(--ember-dim);
@@ -622,11 +973,18 @@
         </span>
         <span class="menu-item-desc">Buy me a coffee on Ko-fi — keeps the project going. Entirely optional.</span>
       </a>
+      <section class="fav-section" id="favSection" hidden aria-label="Pinned seeds">
+        <div class="fav-header">
+          <span class="fav-header-title">pinned</span>
+          <button class="fav-new-folder" id="favNewFolder" type="button">+ folder</button>
+        </div>
+        <div id="favList"></div>
+      </section>
       <div class="theme-row" role="group" aria-label="Color theme">
         <span class="theme-label">theme</span>
         <div class="theme-swatches" id="themeSwatches"></div>
       </div>
-      <p class="drawer-foot"><kbd>M</kbd> open · <kbd>Esc</kbd> close</p>
+      <p class="drawer-foot"><span class="kbd-pair"><kbd>M</kbd> open</span> · <span class="kbd-pair"><kbd>F</kbd> pin</span> · <span class="kbd-pair"><kbd>[ ]</kbd> cycle</span> · <span class="kbd-pair"><kbd>Esc</kbd> close</span></p>
     </aside>
   </div>
   <div class="wrap">
@@ -659,12 +1017,21 @@
 
       <div class="seed-area">
         <div class="seed-label">seed <span class="seed-meta" id="seedMeta"></span></div>
-        <input id="seed" class="seed-input" type="text" spellcheck="false" autocomplete="off" />
+        <div class="seed-input-row">
+          <button id="pinPrev" class="pin-chevron is-empty" type="button" aria-label="Previous pinned seed">&lsaquo;</button>
+          <input id="seed" class="seed-input" type="text" spellcheck="false" autocomplete="off" />
+          <button id="pinNext" class="pin-chevron is-empty" type="button" aria-label="Next pinned seed">&rsaquo;</button>
+        </div>
         <div class="seed-actions">
           <button id="roll" class="seed-btn">roll</button>
           <button id="copy" class="seed-btn">copy</button>
+          <button id="pin" class="seed-btn seed-btn-icon" type="button" aria-pressed="false" aria-label="Pin this seed" title="pin this seed (F)">
+            <!-- Push-pin glyph: head at top, body angled, point down. Distinct
+                 from the Ko-fi heart in the drawer to avoid icon collision. -->
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M14 3l7 7-3 1-4 4 1 5-3-3-5 5 1-7-4-4 5-1 4-4 1-3z"/></svg>
+          </button>
         </div>
-        <div class="seed-hint" id="seedHint">enter to reseed · r to roll · space to play</div>
+        <div class="seed-hint" id="seedHint"><span class="hint-pair">enter to reseed</span> · <span class="hint-pair">r to roll</span> · <span class="hint-pair">f to pin</span> · <span class="hint-pair">space to play</span></div>
       </div>
     </div>
   </div>

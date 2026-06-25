@@ -115,7 +115,12 @@ Liam's checklist for the site itself. Engine-side work belongs in
 `docs/user-feedback-features.md`. This section is for *site*-level
 things — hosting, UX, deploy, copy.
 
-### 1. Copy button copies the shareable link, not the seed integer
+### 1. Copy button copies the shareable link, not the seed integer — DONE
+
+Done: the copy handler writes `window.location` with `?seed=<value>` to
+the clipboard (`main.ts`, the `#copy` click handler) and the loader reads
+`?seed=` on init (`seedFromUrl`). Falls back to a "clipboard blocked"
+hint. Original spec below.
 
 The seed-copy affordance currently puts the bare integer on the
 clipboard. Users want to paste a *playable link* into chat / email —
@@ -235,7 +240,7 @@ so.
 
 ### High payoff / low cost
 
-#### 4. UI color themes (forest / sky / dusk) — DONE
+#### 4. UI color themes (ember / forest / tide / dusk) — DONE
 
 The CSS is already fully tokenized via `:root` vars, so swapping the
 palette is cheap and the single biggest visual ROI on the board. Add a
@@ -276,16 +281,19 @@ fires on a user switch, not the silent initial load. Card markup
 de-hardcoded glows, swatch row markup + CSS), `apps/web-demo/src/main.ts`
 (theme list, `applyTheme` class toggle, swatch render + persist).
 
-#### 5. Seed/key/BPM readout
+#### 5. Seed/key/BPM readout — PARTIAL (BPM done; key/mode remaining)
 
-The engine derives a per-seed BPM (`engine.getOptions().bpm`) but it's
-only used to drive the ember pulse, never *shown*. Surface a tiny readout
-(`74 bpm · F lydian` or similar) near the seed so each seed feels
-distinct rather than interchangeable — reinforces the seed-identity
-thesis. Pull key/mode from the engine if exposed; BPM is already to hand.
+BPM **is** already shown: `setSeedMeta` renders `· <n> bpm` next to the
+seed (`main.ts`), populated on init / build / reseed from
+`engine.getOptions().bpm`. **Remaining:** add key/mode (`F lydian`) to
+the same readout so each seed feels distinct — reinforces the
+seed-identity thesis. **Blocker:** the engine does not currently expose
+key/mode via `getOptions()`; an agent must first surface it from
+`@loam/core` (check `packages/core/src`), then render it in
+`setSeedMeta`. Scope this as: (1) expose key/mode in core, (2) display.
 
-**Files:** `apps/web-demo/index.html` (readout element),
-`apps/web-demo/src/main.ts` (populate on build/reseed).
+**Files:** `packages/core/src` (expose key/mode), `apps/web-demo/src/main.ts`
+(`setSeedMeta`), possibly `apps/web-demo/index.html` if markup changes.
 
 #### 6. Browser history for rolls — DONE
 
@@ -311,13 +319,36 @@ playback. Warmth left as its qualitative label. Cross-ref:
 
 ### Medium
 
-#### 8. Favorites / pinned seeds
+#### 8. Favorites / pinned seeds — DONE
 
-You find a great seed, there's nowhere to keep it. A `localStorage` pin
-list in the drawer is backend-free — pin the current seed, list pins as
-clickable permalinks. Complements #6.
+Pin store + one-level folders in `localStorage` (`loam.favorites`). Surface:
 
-**Files:** `apps/web-demo/index.html` (drawer list), `main.ts`.
+- Push-pin button in the seed-actions row (`F` keyboard shortcut), filled
+  when the active seed is pinned. Heart-vs-Ko-fi-heart icon collision
+  avoided by choosing a distinct pin glyph.
+- `‹` / `›` chevrons flanking the seed input + `[` / `]` keys cycle
+  through pins. Cycling uses `history.replaceState` so it doesn't flood
+  the back stack.
+- Drawer "pinned" section above the theme row (hidden until the first
+  pin). Inline editable note per pin (placeholder `+ add note`,
+  `maxLength` 120). Hover-revealed move + unpin actions; on `(hover:none)`
+  touch devices they're always visible.
+- Folders with collapsible body, inline rename (auto-focus on create,
+  collision-free `"new folder N"` naming), and inline `delete "name"?`
+  confirm flow on `×`. Twist is the sole collapse trigger; the rest of
+  the head is inert chrome.
+- Move-to-folder popup rendered at body level with `position: fixed` and
+  computed coords so it escapes the `#favList` scroll clip; flips above
+  the anchor near the viewport bottom. Skips the pin's current folder
+  and `(no folder)` when irrelevant; inline `+ new folder…` row at the
+  bottom.
+- Only `#favList` scrolls (subtle muted scrollbar with a reserved gutter
+  so the row-hover background isn't clipped); the rest of the drawer is
+  stationary, including the keyboard-hint footer.
+
+**Files:** `apps/web-demo/index.html` (seed-row chrome, drawer markup,
+favorites CSS), `apps/web-demo/src/main.ts` (favorites module, render,
+key handlers, popup positioning).
 
 #### 9. Mobile share — `navigator.share()` + QR
 
@@ -338,15 +369,18 @@ the master chain in the adapter.
 
 **Files:** `packages/synth-tone` (expose analyser), `main.ts` (rAF loop).
 
-#### 12. Rain → three-state cycle + visible rain
+#### 12. Rain → three-state cycle + visible rain — (a) DONE, (b) remaining
 
-Two items, same feature. (a) Rain is binary; make it on → cycle (varying
-durations) → off per `user-feedback-features.md → Automatic Rain Cycle`.
-(b) Rain has zero visual presence — add faint diagonal streaks / a
-background wash when on, so a major audio feature has a face.
+Two items, same feature. (a) **DONE** — rain is now off → on → cycle
+(varying intensity) per `user-feedback-features.md → Automatic Rain
+Cycle` (see `uiState.rainMode` + `applyRainMode` in `main.ts`).
+(b) **Remaining** — rain has zero *visual* presence; add faint diagonal
+streaks / a background wash when on, so a major audio feature has a face.
+This is the only open part. Note: leans toward "busy" — deprioritized
+against the simplistic brief (see refinement pass below).
 
 **Files:** `apps/web-demo/index.html` (rain visual layer),
-`apps/web-demo/src/main.ts`, possibly engine/adapter for the cycle.
+`apps/web-demo/src/main.ts` (toggle the layer on rain state).
 
 ### Lower / polish
 
@@ -361,12 +395,6 @@ vinyl/lo-fi framing.
 
 Slow rising sparks from the hero on play (cheap canvas or CSS). On-theme
 for "ember," gives the idle screen life during long focus sessions.
-
-#### 15. Typography contrast
-
-Everything is one monospace at near-identical tiny sizes with wide
-tracking — tasteful but monotone. The seed (the star) deserves a larger,
-more confident treatment vs. the control labels.
 
 #### 16. First-load attract pulse — DONE
 
@@ -388,10 +416,13 @@ sliding. Section-dividers item from §2 left out (still one card).
 `user-feedback-features.md → Swapping tabs cuts out music` — Web Audio
 suspends on backgrounded tabs. Context now resumes on `visibilitychange`.
 
-#### 19. Engine-build error state
+#### 19. Engine-build error state — DONE
 
-`buildAudio` can throw and the hint stays at "warming up…" forever. Add a
-catch that surfaces a recoverable error message.
+`buildAudio` (and the subsequent `adapter.start()`) are wrapped in
+try/catch in `toggle()` (`apps/web-demo/src/main.ts`). On failure the
+hint switches to "audio failed to start · tap to retry" and the error
+is logged — the next tap re-enters `toggle()` and retries the build,
+so the user is never stranded at "warming up…".
 
 #### 20. Re-enable pinch-zoom - DONE
 

@@ -9,7 +9,7 @@ This note lays out some early stage feedback I got on the prototype
 ## UI Color Themes
 Current background is warm orange, add forest theme, sky theme, etc
 
-*DONE.* Four themes (ember / forest / sky / dusk) selectable via a swatch
+*DONE.* Four themes (ember / forest / tide / dusk) selectable via a swatch
 row in the extras drawer; choice persists in `localStorage`. Palettes live
 as `.theme-<id>` CSS classes in `apps/web-demo/index.html` (single source
 of truth — no hex in JS); microadjust by editing a hex and pushing. See
