@@ -259,6 +259,7 @@ function cyclePin(dir: 1 | -1): void {
   const next =
     idx === -1 ? (dir === 1 ? 0 : order.length - 1) : (idx + dir + order.length) % order.length;
   const target = order[next];
+  if (!target) return;
   try {
     // Cycling replaces history instead of pushing. Otherwise scrubbing
     // through a library with `[` / `]` floods the back stack and makes

@@ -26,12 +26,12 @@ jobs:
       - name: Lint
         run: pnpm run lint
 
-      # Typecheck needs @loam/core's emitted types because downstream
-      # packages (synth-tone, web-demo) import from '@loam/core' and
-      # resolve via the package's `types` entry. Build core first so
-      # `tsc --noEmit` finds them.
-      - name: Build core
-        run: pnpm --filter @loam/core build
+      # Typecheck needs the library packages' emitted types: web-demo
+      # imports from both '@loam/core' and '@loam/synth-tone' and resolves
+      # via each package's `types` entry, which only exists after a build.
+      # pnpm builds these in dependency order (core before synth-tone).
+      - name: Build packages
+        run: pnpm --filter "./packages/*" build
 
       - name: Typecheck
         run: pnpm run typecheck
