@@ -235,7 +235,7 @@ so.
 
 ### High payoff / low cost
 
-#### 4. UI color themes (forest / sky / dusk)
+#### 4. UI color themes (forest / sky / dusk) — DONE
 
 The CSS is already fully tokenized via `:root` vars, so swapping the
 palette is cheap and the single biggest visual ROI on the board. Add a
@@ -243,8 +243,38 @@ small swatch row in the drawer (or a cycle button) that rewrites the
 token set. Persist choice in `localStorage`. Cross-ref:
 `user-feedback-features.md → UI Color Themes`.
 
-**Files:** `apps/web-demo/index.html` (theme token sets + swatch markup),
-`apps/web-demo/src/main.ts` (apply + persist).
+**Status:** Shipped four themes — ember (default), forest, sky, dusk.
+**Palettes live entirely in CSS** as `.theme-<id>` classes in
+`index.html` (single source of truth — no hex values in JS). Applying a
+theme toggles the `.theme-<id>` class on `<html>`; the nine palette
+tokens cascade from there. `main.ts` only holds a lightweight list of
+`{ id, label }` registering which themes exist + swatch order. The drawer
+renders one swatch chip per entry; each chip carries its own
+`.theme-<id>` class so its preview gradient (`var(--ember)`/`var(--bg)`)
+cascades to that theme's colors regardless of the active theme. Active
+chip gets a ring. Choice persists in `localStorage` (`loam.theme`),
+re-applied on load, private-mode safe. All ember/rain-cycle glows
+(slider thumbs, toggle shadows, ember core/halo, drawer bg) were
+de-hardcoded to `color-mix(in srgb, var(--ember)…)` so they track the
+theme too. **Microadjust loop:** edit a hex in a `.theme-*` block →
+push → ~60s to live. **Add a theme:** new `.theme-x` CSS block + one
+entry in `main.ts`.
+
+**Immersion layer:** each theme entry in `main.ts` also carries a `hero`
+(what the glowing orb is called — ember / firefly / beacon / moon; the
+`id` `sky` is displayed as "tide").
+Switching themes (a) morphs the page title + the idle "tap the
+&lt;hero&gt; to begin" prompt, and (b) flashes a quiet, small
+center-screen "title card" showing just the theme name (the `label`),
+fading up and out over ~1.5s at low opacity — deliberately understated.
+`prefers-reduced-motion` swaps the drift for a plain fade. The card only
+fires on a user switch, not the silent initial load. Card markup
+`#enterCard` + `.enter-card` CSS in `index.html`; `showEnterCard` in
+`main.ts`.
+
+**Files:** `apps/web-demo/index.html` (`.theme-*` palette classes,
+de-hardcoded glows, swatch row markup + CSS), `apps/web-demo/src/main.ts`
+(theme list, `applyTheme` class toggle, swatch render + persist).
 
 #### 5. Seed/key/BPM readout
 
@@ -363,7 +393,77 @@ suspends on backgrounded tabs. Context now resumes on `visibilitychange`.
 `buildAudio` can throw and the hint stays at "warming up…" forever. Add a
 catch that surfaces a recoverable error message.
 
-#### 20. Re-enable pinch-zoom
+#### 20. Re-enable pinch-zoom - DONE
 
 `maximum-scale=1` in the viewport meta disables pinch-zoom — an
 accessibility smell. Drop it unless there's a concrete reason.
+
+---
+
+## Aesthetic refinement pass (2026-06-24)
+
+Goal stated by Liam: induce the feeling of a *well-put-together,
+simplistic music website*. The bones are strong (tokenized themes,
+grain+vignette, beat-synced breathe). These are refinement/restraint
+moves, not more effects — to be picked up *after* the themes are
+perfected. Ordered by payoff. The lever here is polish, not novelty;
+busy-making effects (particles #14, heavy rain visuals #12) are
+deliberately deprioritized as off-brief for "simplistic."
+
+#### 21. Typography hierarchy (the protagonist) — recommended first
+
+Supersedes/expands #15. Everything is one monospace at near-identical
+tiny sizes, so nothing leads the eye. Make the **seed** the clear
+protagonist — larger, more confident weight/size — and demote control
+labels to quiet uppercase micro-text. A single clear focal point is the
+biggest "designed vs functional" signal. Pure CSS, low risk.
+
+**Files:** `apps/web-demo/index.html` (type scale on seed vs labels).
+
+#### 22. Staggered entrance fade-in
+
+A simplistic site reads as *expensive* when elements **arrive** rather
+than blink in. On load, fade orb → hint → panel over ~600ms with a small
+stagger and a gentle ease. One-time only; must respect
+`prefers-reduced-motion` (no transform, or skip). Tiny effort, strong
+"considered" impression.
+
+**Files:** `apps/web-demo/index.html` (keyframes + per-element delay),
+possibly a `loaded` class toggled in `main.ts`.
+
+#### 23. Audio-reactive ember
+
+Cross-ref #11 (same idea, kept here for the refinement narrative). The
+orb breathes on the **clock**, not the **music** — tap an `AnalyserNode`
+RMS off the master chain so loud moments flare. Turns the hero from
+decoration into an instrument; the touch that makes a *music* site feel
+alive. Medium effort: expose an analyser in the adapter, drive
+scale/opacity from a rAF loop. Reduced-motion: damp or disable.
+
+**Files:** `packages/synth-tone` (expose analyser), `main.ts` (rAF loop).
+
+#### 24. Unified motion language
+
+Pick one easing curve — the drawer's `cubic-bezier(0.22, 1, 0.36, 1)` is
+a good candidate — and apply it across *all* transitions. Mismatched
+easings read as subliminally "off." Audit every `transition:` /
+`animation:` for a consistent curve + sensible duration scale.
+
+**Files:** `apps/web-demo/index.html` (transition/animation declarations).
+
+#### 25. Hover / focus-visible refinement
+
+Give every interactive element (swatches, toggles, seed input, buttons) a
+subtle, *uniform* hover + `:focus-visible` affordance. Quiet, but
+consistent micro-feedback is what "tight" feels like.
+
+**Files:** `apps/web-demo/index.html`.
+
+#### 26. Vertical rhythm + elevation
+
+(a) Align all gaps/padding to one spacing scale (e.g. multiples of 4px) —
+simplistic design lives or dies on spacing consistency. (b) Let the
+panel/drawer sit on a barely-there surface tint derived from `--bg2` via
+`color-mix`, so depth reads without hard borders.
+
+**Files:** `apps/web-demo/index.html`.

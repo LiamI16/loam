@@ -5,6 +5,74 @@ import { buildLofiChain, ToneAudioAdapter, volToDb, warmHz } from '@loam/synth-t
 // BPM from a range). User-facing tempo control is the speed slider,
 // which scales playback on top.
 
+// ── color themes ──────────────────────────────────────────────────
+// Palettes are NOT defined here — they live as `.theme-<id>` CSS classes
+// in index.html (single source of truth). This list only registers which
+// themes exist + their swatch label/order; applying one toggles the class
+// on <html>. To add a theme: add a `.theme-x` CSS block + an entry below.
+// `label` doubles as the transient title-card text on switch; `hero` =
+// what the glowing orb is called in this theme (drives the idle hint +
+// page title). Tune wording here, same place as colors.
+const THEMES: ReadonlyArray<{
+  id: string;
+  label: string;
+  hero: string;
+}> = [
+  { id: 'ember', label: 'ember', hero: 'ember' },
+  { id: 'forest', label: 'forest', hero: 'firefly' },
+  // id stays 'sky' (CSS class + saved prefs); display name is 'tide'.
+  { id: 'sky', label: 'tide', hero: 'beacon' },
+  { id: 'dusk', label: 'dusk', hero: 'moon' },
+];
+const THEME_BY_ID = new Map(THEMES.map((t) => [t.id, t]));
+const THEME_IDS = new Set(THEMES.map((t) => t.id));
+const THEME_STORAGE_KEY = 'loam.theme';
+const DEFAULT_THEME = 'ember';
+
+// `announce` shows the transient "entering <place>" card — true only on a
+// user-initiated switch, false on the silent initial load.
+function applyTheme(rawId: string, announce = false): void {
+  const id = THEME_IDS.has(rawId) ? rawId : DEFAULT_THEME;
+  const theme = THEME_BY_ID.get(id)!;
+  const root = document.documentElement;
+  root.classList.remove(...THEMES.map((t) => `theme-${t.id}`));
+  root.classList.add(`theme-${id}`);
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, id);
+  } catch { /* private mode / storage disabled — theme still applies for the session */ }
+  document
+    .querySelectorAll<HTMLButtonElement>('.theme-swatch')
+    .forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.theme === id)));
+
+  // Morph the metaphor: title + the idle "tap the <hero>" prompt. Only
+  // rewrite the hint while idle so it never clobbers "listening…"/"paused".
+  document.title = `loam · ${theme.label}`;
+  const hintEl = document.getElementById('hint');
+  if (hintEl && hintEl.textContent?.startsWith('tap the')) {
+    hintEl.textContent = `tap the ${theme.hero} to begin`;
+  }
+  if (announce) showEnterCard(theme.label);
+}
+
+// Replay the title-card animation by removing + re-adding the class on the
+// next frame (so the keyframes restart even on a rapid second switch).
+function showEnterCard(text: string): void {
+  const card = document.getElementById('enterCard');
+  if (!card) return;
+  card.textContent = text;
+  card.classList.remove('show');
+  void card.offsetWidth; // force reflow
+  card.classList.add('show');
+}
+
+function currentTheme(): string {
+  try {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved && THEME_IDS.has(saved)) return saved;
+  } catch { /* ignore */ }
+  return DEFAULT_THEME;
+}
+
 // ── seed handling ─────────────────────────────────────────────────
 function seedFromUrl(): bigint | null {
   const raw = new URLSearchParams(window.location.search).get('seed');
@@ -531,6 +599,27 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && menu.classList.contains('open')) setMenuOpen(false);
 });
 feedbackLink.addEventListener('click', () => setMenuOpen(false));
+
+// ── theme swatches: render one chip per THEMES entry, apply on click ──
+{
+  const row = $<HTMLDivElement>('themeSwatches');
+  for (const { id, label } of THEMES) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    // The `theme-${id}` class scopes this chip's palette tokens to itself,
+    // so its CSS preview gradient renders in that theme's colors.
+    btn.className = `theme-swatch theme-${id}`;
+    btn.dataset.theme = id;
+    btn.title = label;
+    btn.setAttribute('aria-label', `${label} theme`);
+    btn.addEventListener('click', () => {
+      applyTheme(id, true);
+      setMenuOpen(false); // close the drawer so the title card is visible
+    });
+    row.appendChild(btn);
+  }
+  applyTheme(currentTheme());
+}
 
 // Promote current seed into the URL so a copy yields a permalink, without
 // triggering a navigation/reload.

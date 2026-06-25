@@ -9,6 +9,12 @@ This note lays out some early stage feedback I got on the prototype
 ## UI Color Themes
 Current background is warm orange, add forest theme, sky theme, etc
 
+*DONE.* Four themes (ember / forest / sky / dusk) selectable via a swatch
+row in the extras drawer; choice persists in `localStorage`. Palettes live
+as `.theme-<id>` CSS classes in `apps/web-demo/index.html` (single source
+of truth — no hex in JS); microadjust by editing a hex and pushing. See
+`docs/web-demo.md` §4. Cross-ref: that section.
+
 ## Copy Link
 The copy button under the seed should copy the link rather than the seed integer value
 
@@ -16,6 +22,8 @@ The copy button under the seed should copy the link rather than the seed integer
 
 ## Automatic Rain Cycle
 Instead of binary on/off for rain, cycle between on/off with varying durations. Press rain button once for on, press again for cycle, then back to off.
+
+*DONE*
 
 ## Warmth Slider has more effect
 ^ What header says
