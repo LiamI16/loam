@@ -39,10 +39,12 @@ function applyTheme(rawId: string, announce = false): void {
   root.classList.add(`theme-${id}`);
   try {
     localStorage.setItem(THEME_STORAGE_KEY, id);
-  } catch { /* private mode / storage disabled — theme still applies for the session */ }
-  document
-    .querySelectorAll<HTMLButtonElement>('.theme-swatch')
-    .forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.theme === id)));
+  } catch {
+    /* private mode / storage disabled — theme still applies for the session */
+  }
+  document.querySelectorAll<HTMLButtonElement>('.theme-swatch').forEach((b) => {
+    b.setAttribute('aria-pressed', String(b.dataset.theme === id));
+  });
 
   // Morph the metaphor: title + the idle "tap the <hero>" prompt. Only
   // rewrite the hint while idle so it never clobbers "listening…"/"paused".
@@ -69,7 +71,9 @@ function currentTheme(): string {
   try {
     const saved = localStorage.getItem(THEME_STORAGE_KEY);
     if (saved && THEME_IDS.has(saved)) return saved;
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return DEFAULT_THEME;
 }
 
