@@ -27,6 +27,14 @@ export interface ChannelRegistration {
 export interface ParamSetter {
   /** Immediate value change. Used for one-shot UI slider events. */
   set(value: number): void;
-  /** Smooth ramp over `durationSec`. Used for `ParamEvent.rampMs`. */
-  ramp(value: number, durationSec: number): void;
+  /**
+   * Smooth ramp over `durationSec`. Used for `ParamEvent.rampMs`.
+   *
+   * `startTime` is an absolute audio-context time (seconds) at which the
+   * ramp should *begin*. When omitted the ramp starts "now" — the path UI
+   * sliders take. The adapter passes it for engine-emitted `ParamEvent`s so
+   * a continuous param stream stays time-locked to the notes it shapes even
+   * when scheduled far ahead of the audio clock (see `LOOKAHEAD_SEC`).
+   */
+  ramp(value: number, durationSec: number, startTime?: number): void;
 }

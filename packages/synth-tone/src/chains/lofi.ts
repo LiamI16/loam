@@ -280,8 +280,8 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
     set: (v) => {
       warmth.frequency.value = v;
     },
-    ramp: (v, t) => {
-      warmth.frequency.rampTo(v, t);
+    ramp: (v, t, startTime) => {
+      warmth.frequency.rampTo(v, t, startTime);
     },
   });
   // master.volume is in dB now (master is a Tone.Volume). UI should send
@@ -290,16 +290,16 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
     set: (v) => {
       adapter.master.volume.value = v;
     },
-    ramp: (v, t) => {
-      adapter.master.volume.rampTo(v, t);
+    ramp: (v, t, startTime) => {
+      adapter.master.volume.rampTo(v, t, startTime);
     },
   });
   adapter.registerParam('bed.rain.level', {
     set: (v) => {
       rainVol.volume.value = v;
     },
-    ramp: (v, t) => {
-      rainVol.volume.rampTo(v, t);
+    ramp: (v, t, startTime) => {
+      rainVol.volume.rampTo(v, t, startTime);
     },
   });
   // Engine-driven evo-filter sweep (Stage 5 — replaces the static LFO).
@@ -307,8 +307,8 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
     set: (v) => {
       evoFilter.frequency.value = v;
     },
-    ramp: (v, t) => {
-      evoFilter.frequency.rampTo(v, t);
+    ramp: (v, t, startTime) => {
+      evoFilter.frequency.rampTo(v, t, startTime);
     },
   });
 
@@ -329,10 +329,13 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
     set: (v) => {
       chorus.depth = v;
     },
-    ramp: (v, _t) => {
-      // Chorus.depth is a plain number, not a Tone.Param — no ramp API.
+    ramp: (v, _t, _startTime) => {
+      // Chorus.depth is a plain number, not a Tone.Param — no ramp API and
+      // no way to schedule at a future `startTime`, so this one param glides
+      // (and applies) at dispatch rather than time-locked like the rest.
       // The engine's 250 ms emission cadence is slow enough that stepping
-      // doesn't audibly zipper at the slow fBm rates Stage 7b uses.
+      // doesn't audibly zipper at the slow fBm rates Stage 7b uses, and the
+      // depth drift is subtle enough that the small lead is imperceptible.
       chorus.depth = v;
     },
   });
@@ -340,8 +343,8 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
     set: (v) => {
       drumBus.frequency.value = v;
     },
-    ramp: (v, t) => {
-      drumBus.frequency.rampTo(v, t);
+    ramp: (v, t, startTime) => {
+      drumBus.frequency.rampTo(v, t, startTime);
     },
   });
   // Chord echo: time is BPM-locked (engine emits one-shot at t=0);
@@ -350,24 +353,24 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
     set: (v) => {
       chordEcho.delayTime.value = v;
     },
-    ramp: (v, t) => {
-      chordEcho.delayTime.rampTo(v, t);
+    ramp: (v, t, startTime) => {
+      chordEcho.delayTime.rampTo(v, t, startTime);
     },
   });
   adapter.registerParam('fx.chordEcho.feedback', {
     set: (v) => {
       chordEcho.feedback.value = v;
     },
-    ramp: (v, t) => {
-      chordEcho.feedback.rampTo(v, t);
+    ramp: (v, t, startTime) => {
+      chordEcho.feedback.rampTo(v, t, startTime);
     },
   });
   adapter.registerParam('fx.chordEcho.wet', {
     set: (v) => {
       chordEchoSend.gain.value = v;
     },
-    ramp: (v, t) => {
-      chordEchoSend.gain.rampTo(v, t);
+    ramp: (v, t, startTime) => {
+      chordEchoSend.gain.rampTo(v, t, startTime);
     },
   });
 }

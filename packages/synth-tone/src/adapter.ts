@@ -2,13 +2,23 @@ import type { Engine, EngineEvent, NoteEvent, ParamEvent, TickEvent } from '@loa
 import * as Tone from 'tone';
 import type { ChannelRegistration, ParamSetter } from './types.js';
 
-/** How far ahead of the audio clock the engine pre-schedules, in seconds. */
-const LOOKAHEAD_SEC = 0.2;
+/** How far ahead of the audio clock the engine pre-schedules, in seconds.
+ *
+ * This is the load-bearing defence against main-thread jank. `pumpOnce`
+ * runs on the main thread (the worker only *posts* ticks), so when an
+ * animation, scroll, layout or GC pause blocks the main thread, no new
+ * events get scheduled until it clears. As long as that stall is shorter
+ * than the lookahead, the already-scheduled notes keep rendering on the
+ * audio thread and nothing is audible. 0.75 s comfortably absorbs the
+ * scroll/animation stalls that caused dropouts at the previous 0.2 s while
+ * keeping the stop→resume anchor gap (see `start()`) and the now-time-locked
+ * param stream (see `dispatchParam`) modest. */
+const LOOKAHEAD_SEC = 0.75;
 /** How often the adapter polls the engine for the next chunk of events.
- * 50 ms is comfortably below the 200 ms lookahead (so we always stay ahead
- * of the audio clock) while halving the main-thread work vs the previous
- * 25 ms — reduces interaction jank (scroll, tab-switch) without audible
- * effect on scheduling fidelity. */
+ * 50 ms is far below the lookahead (so we always stay ahead of the audio
+ * clock) while halving the main-thread work vs the previous 25 ms —
+ * reduces interaction jank (scroll, tab-switch) without audible effect on
+ * scheduling fidelity. */
 const TICK_INTERVAL_MS = 50;
 /** Master-bus fade-out time when stop() is called. ~10 ms is short enough
  * to feel instant and long enough to avoid an audible click. */
@@ -112,13 +122,13 @@ export class ToneAudioAdapter {
    * Direct parameter setter — used by UI sliders. Same code path as
    * engine-emitted `ParamEvent`s.
    */
-  setParam(target: string, value: number, rampMs = 0): void {
+  setParam(target: string, value: number, rampMs = 0, startTime?: number): void {
     const setter = this.params.get(target);
     if (!setter) {
       console.warn(`[loam] no param registered for "${target}"`);
       return;
     }
-    if (rampMs > 0) setter.ramp(value, rampMs / 1000);
+    if (rampMs > 0) setter.ramp(value, rampMs / 1000, startTime);
     else setter.set(value);
   }
 
@@ -128,19 +138,32 @@ export class ToneAudioAdapter {
    */
   async start(): Promise<void> {
     await Tone.start();
-    // Fade the mute gate up. Explicit AudioParam scheduling (rather than
-    // Tone's `rampTo`) so the value lands at exactly 1, not asymptotic.
-    const now = Tone.now();
-    const gain = this.out.gain;
-    gain.cancelScheduledValues(now);
-    gain.setValueAtTime(gain.value, now);
-    gain.linearRampToValueAtTime(1, now + 0.05);
 
     this.engine?.reset();
     // Anchor past anything pre-scheduled by a previous run, plus a hair of
     // safety so per-voice "last scheduled" guards don't fire on the very
     // first event. First start: latestScheduledAudioTime == 0, no offset.
-    this.startAudioTime = Math.max(Tone.now(), this.latestScheduledAudioTime + 0.005);
+    // On a rapid stop→resume this can sit up to LOOKAHEAD_SEC ahead of now,
+    // because we can't un-schedule Tone one-shots already queued by the
+    // aborted run — anchoring past them is what keeps them from colliding
+    // with the fresh start.
+    const now = Tone.now();
+    this.startAudioTime = Math.max(now, this.latestScheduledAudioTime + 0.005);
+
+    // Fade the mute gate up, anchored to startAudioTime (not now). When the
+    // anchor is ahead of now (rapid resume), this holds the gate at 0 across
+    // the [now, startAudioTime] gap so the previous run's stale one-shots
+    // stay muted, then opens exactly as the fresh audio begins. When the
+    // anchor == now (first start / resume after a pause longer than the
+    // lookahead) it degenerates to an immediate fade-up. Explicit AudioParam
+    // scheduling (rather than Tone's `rampTo`) so the value lands at exactly
+    // 1, not asymptotic.
+    const gain = this.out.gain;
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(gain.value, now);
+    gain.setValueAtTime(gain.value, this.startAudioTime);
+    gain.linearRampToValueAtTime(1, this.startAudioTime + 0.05);
+
     this.pumpOnce();
     this.startPumpClock();
   }
@@ -225,6 +248,14 @@ export class ToneAudioAdapter {
   }
 
   private dispatchParam(event: ParamEvent): void {
-    this.setParam(event.target, event.value, event.rampMs ?? 0);
+    // Schedule the ramp to *begin* at the event's audio time rather than
+    // "now". With a deep lookahead a param event can be dispatched up to
+    // LOOKAHEAD_SEC before it should take effect; anchoring to the audio
+    // clock keeps the continuous param stream (filter sweep, warmth drift)
+    // time-locked to the notes it shapes. Instantaneous params (rampMs == 0)
+    // still apply immediately — those are one-shots at t≈0 (setup) where the
+    // distinction doesn't matter.
+    const startTime = this.startAudioTime + event.time;
+    this.setParam(event.target, event.value, event.rampMs ?? 0, startTime);
   }
 }
