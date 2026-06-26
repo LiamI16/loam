@@ -1,5 +1,6 @@
 import { EmberEngine, Seed } from '@loam/core';
 import { buildLofiChain, ToneAudioAdapter, volToDb, warmHz } from '@loam/synth-tone';
+import { registerSW } from 'virtual:pwa-register';
 
 // Engine's home tempo is now seed-derived (each seed picks its own
 // BPM from a range). User-facing tempo control is the speed slider,
@@ -1215,3 +1216,34 @@ document.addEventListener(
 // setSeedMeta-driven ones) actually render — earlier peek-time calls no-op'd.
 favUiReady = true;
 refreshFavoritesUi();
+
+// ── service worker / PWA update toast ─────────────────────────────
+// Offline-first: SW precaches the build on first visit; subsequent
+// loads work with no network. On new deploy, the SW signals an update
+// and we surface a non-intrusive toast — reload is user-initiated so
+// audio is never yanked mid-session.
+const updateSW = registerSW({
+  onNeedRefresh() {
+    const toast = document.createElement('div');
+    toast.setAttribute('role', 'status');
+    toast.style.cssText = [
+      'position:fixed', 'left:50%', 'bottom:24px', 'transform:translateX(-50%)',
+      'display:flex', 'align-items:center', 'gap:12px',
+      'padding:10px 14px', 'border-radius:8px',
+      'background:color-mix(in srgb, var(--bg2) 92%, transparent)',
+      'border:1px solid var(--ember-dim)',
+      'color:var(--ember)', 'font:13px system-ui, sans-serif',
+      'box-shadow:0 4px 20px rgba(0,0,0,0.4)', 'z-index:9999',
+    ].join(';');
+    toast.innerHTML =
+      '<span>new version available</span>' +
+      '<button type="button" style="background:transparent;border:1px solid var(--ember-dim);color:var(--ember);padding:4px 10px;border-radius:4px;cursor:pointer;font:inherit">refresh</button>' +
+      '<button type="button" aria-label="dismiss" style="background:transparent;border:none;color:var(--ember-dim);cursor:pointer;font:inherit;padding:4px 6px">×</button>';
+    const [, refreshBtn, dismissBtn] = toast.children as unknown as [
+      HTMLSpanElement, HTMLButtonElement, HTMLButtonElement,
+    ];
+    refreshBtn.addEventListener('click', () => void updateSW(true));
+    dismissBtn.addEventListener('click', () => toast.remove());
+    document.body.appendChild(toast);
+  },
+});
