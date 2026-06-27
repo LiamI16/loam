@@ -752,6 +752,60 @@
       transition: opacity 0.18s ease;
     }
     .fav-pin:hover .fav-pin-actions, .fav-pin:focus-within .fav-pin-actions { opacity: 1; }
+
+    /* ── drag-and-drop reorder/move ──
+       Pin rows are draggable; folder wraps and the ungrouped wrap accept
+       drops (append-to-section). Dragging another pin onto a row shows a
+       thin ember line above or below — drop above/below to reorder
+       within the section. Dropping on a folder body highlights the whole
+       folder. The ungrouped wrap reveals a dashed phantom zone during
+       drag (html.is-dragging) so users can ungroup a pin out of a
+       folder even when the ungrouped section is otherwise empty. */
+    .fav-pin.dragging { opacity: 0.35; }
+    .fav-pin {
+      position: relative; /* anchor for the drop-above/below pseudo lines */
+    }
+    .fav-pin.drop-above::before,
+    .fav-pin.drop-below::after {
+      content: "";
+      position: absolute;
+      left: 4px;
+      right: 4px;
+      height: 2px;
+      background: var(--ember);
+      border-radius: 1px;
+      pointer-events: none;
+    }
+    .fav-pin.drop-above::before { top: -1px; }
+    .fav-pin.drop-below::after  { bottom: -1px; }
+    .fav-folder.drag-over > .fav-folder-head,
+    .fav-folder.drag-over > .fav-folder-body {
+      background: color-mix(in srgb, var(--ember) 8%, transparent);
+    }
+    .fav-folder.drag-over { border-radius: 5px; }
+    .fav-ungrouped.drag-over {
+      background: color-mix(in srgb, var(--ember) 8%, transparent);
+      border-radius: 5px;
+    }
+    /* Phantom ungroup drop-zone: only present during a drag, only when
+       the ungrouped section is empty. Dashed outline + faint label so it
+       reads as an inviting drop area, not a permanent UI element. */
+    html.is-dragging .fav-ungrouped:empty {
+      min-height: 34px;
+      margin-bottom: 6px;
+      border: 1px dashed var(--ember-dim);
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    html.is-dragging .fav-ungrouped:empty::before {
+      content: "drop to ungroup";
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      color: var(--ember-dim);
+      opacity: 0.8;
+    }
     .fav-pin-act {
       background: transparent;
       border: 0;

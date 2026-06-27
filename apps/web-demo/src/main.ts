@@ -138,6 +138,42 @@ const PIN_NOTE_MAX = 120;
 // call a no-op; the trailing init flips it true and paints once.
 let favUiReady = false;
 
+// Drag-and-drop reorder/move state. `draggingSeed` is the source pin's
+// seed for the active drag; `spring*` tracks a collapsed folder being
+// hovered for ~600ms so it auto-expands (Finder-style).
+let draggingSeed: string | null = null;
+let springFolderId: string | null = null;
+let springTimer: ReturnType<typeof setTimeout> | null = null;
+const SPRING_DELAY_MS = 600;
+
+function springClear(): void {
+  if (springTimer) {
+    clearTimeout(springTimer);
+    springTimer = null;
+  }
+  springFolderId = null;
+}
+
+function springSchedule(folderId: string): void {
+  if (springFolderId === folderId) return;
+  springClear();
+  springFolderId = folderId;
+  springTimer = setTimeout(() => {
+    const f = favorites.folders.find((x) => x.id === folderId);
+    if (f?.collapsed) toggleFolderCollapsed(folderId);
+    springTimer = null;
+  }, SPRING_DELAY_MS);
+}
+
+// reorderPin re-renders the list mid-drag, which detaches the dragged
+// row. `dragend` is unreliable on detached elements across browsers —
+// call this from every drop handler so global state can't get stuck.
+function clearDragState(): void {
+  draggingSeed = null;
+  document.documentElement.classList.remove('is-dragging');
+  springClear();
+}
+
 function isPinned(seed: bigint): boolean {
   const s = seed.toString();
   return favorites.pins.some((p) => p.seed === s);
@@ -226,6 +262,23 @@ function setPinFolder(seed: string, folderId: string | null): void {
   const p = favorites.pins.find((x) => x.seed === seed);
   if (!p) return;
   p.folderId = folderId;
+  saveFavorites(favorites);
+  refreshFavoritesUi();
+}
+
+// Move a pin to a new position in the flat pins array and (re)tag its
+// folder. Other pins' relative order is preserved — only the dragged pin
+// shifts. `targetIndex` is the desired post-splice index; we adjust for
+// the source removal so the caller can think in pre-splice indices.
+function reorderPin(seed: string, targetIndex: number, folderId: string | null): void {
+  const fromIdx = favorites.pins.findIndex((x) => x.seed === seed);
+  if (fromIdx < 0) return;
+  const [pin] = favorites.pins.splice(fromIdx, 1);
+  if (!pin) return;
+  pin.folderId = folderId;
+  const adjusted = targetIndex > fromIdx ? targetIndex - 1 : targetIndex;
+  const clamped = Math.max(0, Math.min(adjusted, favorites.pins.length));
+  favorites.pins.splice(clamped, 0, pin);
   saveFavorites(favorites);
   refreshFavoritesUi();
 }
@@ -890,6 +943,7 @@ function shortSeed(s: string): string {
 function renderPinRow(p: Pin): HTMLDivElement {
   const row = document.createElement('div');
   row.className = 'fav-pin';
+  row.draggable = true;
   if (p.seed === currentSeed.toString()) row.classList.add('is-current');
 
   const main = document.createElement('div');
@@ -967,7 +1021,123 @@ function renderPinRow(p: Pin): HTMLDivElement {
       /* unreachable */
     }
   });
+
+  // Drag source: pin can be dragged onto a folder, the ungrouped zone,
+  // or another pin row (reorder). dragstart bails out if the gesture
+  // started inside the note input — text-selection there must not become
+  // a drag.
+  row.addEventListener('dragstart', (ev) => {
+    if ((ev.target as HTMLElement | null)?.classList.contains('fav-pin-note')) {
+      ev.preventDefault();
+      return;
+    }
+    draggingSeed = p.seed;
+    row.classList.add('dragging');
+    // .is-dragging on <html> lets CSS reveal the empty-state ungroup zone
+    // and any other drag-only affordances.
+    document.documentElement.classList.add('is-dragging');
+    if (ev.dataTransfer) {
+      ev.dataTransfer.effectAllowed = 'move';
+      // Required for Firefox to start the drag; payload itself is unused
+      // (we read draggingSeed from module state).
+      ev.dataTransfer.setData('text/plain', p.seed);
+    }
+  });
+  row.addEventListener('dragend', () => {
+    draggingSeed = null;
+    row.classList.remove('dragging');
+    document.documentElement.classList.remove('is-dragging');
+    document
+      .querySelectorAll('.drop-above, .drop-below, .drag-over')
+      .forEach((el) => el.classList.remove('drop-above', 'drop-below', 'drag-over'));
+    springClear();
+  });
+
+  // Drop target (reorder above/below this row). Drop joins this row's
+  // section — folderId is inherited from the target pin.
+  row.addEventListener('dragover', (ev) => {
+    if (!draggingSeed || draggingSeed === p.seed) return;
+    ev.preventDefault();
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
+    const rect = row.getBoundingClientRect();
+    const before = ev.clientY < rect.top + rect.height / 2;
+    row.classList.toggle('drop-above', before);
+    row.classList.toggle('drop-below', !before);
+  });
+  row.addEventListener('dragleave', (ev) => {
+    // Only clear when the pointer actually leaves the row (not when it
+    // enters a child). relatedTarget null means it left the window.
+    const next = ev.relatedTarget as Node | null;
+    if (next && row.contains(next)) return;
+    row.classList.remove('drop-above', 'drop-below');
+  });
+  row.addEventListener('drop', (ev) => {
+    if (!draggingSeed || draggingSeed === p.seed) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const rect = row.getBoundingClientRect();
+    const before = ev.clientY < rect.top + rect.height / 2;
+    const pIdx = favorites.pins.findIndex((x) => x.seed === p.seed);
+    if (pIdx < 0) return;
+    reorderPin(draggingSeed, before ? pIdx : pIdx + 1, p.folderId);
+    clearDragState();
+  });
   return row;
+}
+
+// Drop target for a "section" (ungrouped zone or folder wrap). The drop
+// appends the dragged pin to the end of that section: the new array
+// index is one past the last pin sharing the section's folderId. Pin-row
+// drop handlers run first (they stopPropagation) so reorder-on-a-pin
+// always wins over append-to-section when both apply.
+function attachSectionDropTarget(el: HTMLElement, folderId: string | null): void {
+  el.addEventListener('dragover', (ev) => {
+    if (!draggingSeed) return;
+    // If a pin row is the visual drop target, skip the section highlight.
+    const overRow = (ev.target as HTMLElement | null)?.closest('.fav-pin');
+    if (overRow) {
+      el.classList.remove('drag-over');
+      return;
+    }
+    ev.preventDefault();
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
+    el.classList.add('drag-over');
+  });
+  el.addEventListener('dragleave', (ev) => {
+    const next = ev.relatedTarget as Node | null;
+    if (next && el.contains(next)) return;
+    el.classList.remove('drag-over');
+  });
+  el.addEventListener('drop', (ev) => {
+    if (!draggingSeed) return;
+    ev.preventDefault();
+    el.classList.remove('drag-over');
+    let lastIdx = -1;
+    for (let i = favorites.pins.length - 1; i >= 0; i--) {
+      if (favorites.pins[i]?.folderId === folderId) {
+        lastIdx = i;
+        break;
+      }
+    }
+    const target = lastIdx >= 0 ? lastIdx + 1 : favorites.pins.length;
+    reorderPin(draggingSeed, target, folderId);
+    clearDragState();
+  });
+}
+
+function attachFolderDropTarget(wrap: HTMLElement, folder: Folder): void {
+  attachSectionDropTarget(wrap, folder.id);
+  // Spring-loaded expansion: hovering a collapsed folder for ~600ms
+  // auto-expands it so the user can drop deeper or see what's inside.
+  wrap.addEventListener('dragenter', () => {
+    if (!draggingSeed || !folder.collapsed) return;
+    springSchedule(folder.id);
+  });
+  wrap.addEventListener('dragleave', (ev) => {
+    const next = ev.relatedTarget as Node | null;
+    if (next && wrap.contains(next)) return;
+    if (springFolderId === folder.id) springClear();
+  });
 }
 
 function renderFavoritesList(): void {
@@ -975,9 +1145,15 @@ function renderFavoritesList(): void {
   // track a stale element.
   closeMovePopup();
   favList.replaceChildren();
-  // Ungrouped pins (flat, top of section).
+  // Ungrouped pins (flat, top of section). Wrapped so the whole zone is
+  // a drop target — including when empty (CSS reveals a phantom outline
+  // during drag so the user can ungroup a pin out of a folder).
+  const ungroupedWrap = document.createElement('div');
+  ungroupedWrap.className = 'fav-ungrouped';
   const ungrouped = favorites.pins.filter((p) => p.folderId === null);
-  for (const p of ungrouped) favList.appendChild(renderPinRow(p));
+  for (const p of ungrouped) ungroupedWrap.appendChild(renderPinRow(p));
+  attachSectionDropTarget(ungroupedWrap, null);
+  favList.appendChild(ungroupedWrap);
 
   for (const f of favorites.folders) {
     const wrap = document.createElement('div');
@@ -1070,6 +1246,7 @@ function renderFavoritesList(): void {
     for (const p of pinsInFolder) body.appendChild(renderPinRow(p));
 
     wrap.append(head, body);
+    attachFolderDropTarget(wrap, f);
     favList.appendChild(wrap);
   }
 }
