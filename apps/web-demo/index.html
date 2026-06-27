@@ -982,6 +982,22 @@
        between pairs, not between the key and its word ("Esc close"
        stays a unit, separator floats to the next line). */
     .drawer-foot .kbd-pair { white-space: nowrap; }
+    .drawer-attrib {
+      flex-shrink: 0;
+      margin: 10px 0 0;
+      font-size: 9px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      opacity: 0.4;
+    }
+    .drawer-attrib a {
+      color: inherit;
+      text-decoration: none;
+      border-bottom: 1px dotted var(--ink-faint);
+      transition: color 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
+    }
+    .drawer-attrib a:hover { color: var(--ember); border-bottom-color: var(--ember-dim); }
     .drawer-foot kbd {
       font-family: inherit;
       color: var(--ember-dim);
@@ -1063,6 +1079,7 @@
         <div class="theme-swatches" id="themeSwatches"></div>
       </div>
       <p class="drawer-foot"><span class="kbd-pair"><kbd>M</kbd> open</span> · <span class="kbd-pair"><kbd>F</kbd> pin</span> · <span class="kbd-pair"><kbd>[ ]</kbd> cycle</span> · <span class="kbd-pair"><kbd>Esc</kbd> close</span></p>
+      <p class="drawer-attrib">loam · open source · <a href="https://github.com/LiamI16/loam" target="_blank" rel="noopener">github</a></p>
     </aside>
   </div>
   <div class="wrap">

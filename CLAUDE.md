@@ -70,3 +70,8 @@ to slow down, not speed up.
   and `docs/seed-format.md` §7.3a.
 - `ember-generative-study.html` is the original prototype; reference
   specimen, not the v1 deliverable.
+- **Before any `git push`**, run `pnpm lint && pnpm typecheck && pnpm
+  test` from the repo root and fix failures first — this is the gate
+  CI enforces (install · lint · typecheck · deadcode · test · build).
+  Note: biome bans non-null assertions (`x!`) and tsconfig has
+  `noUncheckedIndexedAccess` on, so indexed access is `T | undefined`.
