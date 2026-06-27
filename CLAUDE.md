@@ -68,8 +68,6 @@ to slow down, not speed up.
   pinned at `Seed.from(42n)` with `bpm: 74`. Any change that shifts
   it is a deliberate seed-format break — document in commit message
   and `docs/seed-format.md` §7.3a.
-- `ember-generative-study.html` is the original prototype; reference
-  specimen, not the v1 deliverable.
 - **Before any `git push`**, run `pnpm lint && pnpm typecheck && pnpm
   test` from the repo root and fix failures first — this is the gate
   CI enforces (install · lint · typecheck · deadcode · test · build).
