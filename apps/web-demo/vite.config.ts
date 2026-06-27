@@ -15,7 +15,7 @@ export default defineConfig(({ command }) => ({
       // Prompt-based update so a silent reload never interrupts audio
       // mid-session; main.ts surfaces a toast and waits for user consent.
       registerType: 'prompt',
-      includeAssets: ['icon.svg', 'apple-touch-icon.png'],
+      includeAssets: ['favicon.svg', 'icon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Loam',
         short_name: 'Loam',
