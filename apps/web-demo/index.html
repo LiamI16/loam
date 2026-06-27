@@ -110,8 +110,16 @@
       border-radius: 50%;
       background: radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--ember) 55%, #fff) 0%, var(--ember) 38%, var(--ember-dim) 72%, transparent 100%);
       opacity: 0.28;
-      filter: blur(0.3px);
       transition: opacity 1.2s ease;
+      /* Promote to a cached compositor layer so the beat-synced `breathe`
+         scale is a cheap GPU transform of a pre-rasterized bitmap, not a
+         per-frame re-raster of the gradient. Without this, weak/shared GPUs
+         re-rasterize every frame and starve the audio render thread —
+         audible dropouts while the loam tab is foreground (the animation
+         pauses when hidden, which is why it's only buggy on-tab). The old
+         `filter: blur(0.3px)` was dropped here too: a per-frame GPU filter
+         pass for a visually irrelevant 0.3px. */
+      will-change: transform, opacity;
     }
     .glow {
       position: absolute;
@@ -121,6 +129,7 @@
       background: radial-gradient(circle, color-mix(in srgb, var(--ember) 20%, transparent) 0%, transparent 62%);
       opacity: 0.25;
       transition: opacity 1.2s ease;
+      will-change: transform, opacity;
     }
     .ember-stage.on .ember { opacity: 0.92; animation: breathe var(--beat, 0.8s) ease-in-out infinite; }
     .ember-stage.on .glow  { opacity: 0.85; animation: breatheGlow var(--beat, 0.8s) ease-in-out infinite; }
@@ -144,6 +153,16 @@
     @keyframes attractGlow {
       0%, 100% { opacity: 0.16; }
       50%      { opacity: 0.42; }
+    }
+    /* Escape hatch for GPUs where the continuous breathe/glow scale starves
+       the audio render thread (causes on-tab dropouts on weak/shared GPUs).
+       Reduce Motion stops the animation entirely; the lit opacity from
+       `.ember-stage.on` still conveys play state. */
+    @media (prefers-reduced-motion: reduce) {
+      .ember-stage.on .ember,
+      .ember-stage.on .glow,
+      .ember-stage.attract .ember,
+      .ember-stage.attract .glow { animation: none; }
     }
     /* No focus ring on the ember stage — the breathing glow already
        indicates play state, and a persistent ring after spacebar reads
