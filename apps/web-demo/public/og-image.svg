@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="loam — offline generative lo-fi">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="80%">
+      <stop offset="0%" stop-color="#1d1612"/>
+      <stop offset="70%" stop-color="#15100d"/>
+      <stop offset="100%" stop-color="#15100d"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e8a35a" stop-opacity="0.20"/>
+      <stop offset="62%" stop-color="#e8a35a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="orb" cx="50%" cy="45%" r="50%">
+      <stop offset="0%" stop-color="#f1c69a"/>
+      <stop offset="38%" stop-color="#e8a35a"/>
+      <stop offset="72%" stop-color="#7a4a23"/>
+      <stop offset="100%" stop-color="#7a4a23" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <!-- Vignette to add depth, matching site treatment -->
+  <rect width="1200" height="630" fill="url(#halo)" opacity="0.6"/>
+
+  <!-- Orb on the left, wordmark + tagline on the right -->
+  <g transform="translate(310, 315)">
+    <circle cx="0" cy="0" r="260" fill="url(#halo)"/>
+    <circle cx="0" cy="0" r="170" fill="url(#orb)"/>
+  </g>
+
+  <g transform="translate(620, 290)">
+    <text x="0" y="0"
+          font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
+          font-size="120"
+          font-weight="500"
+          letter-spacing="-2"
+          fill="#e8a35a">loam</text>
+    <text x="0" y="60"
+          font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
+          font-size="26"
+          letter-spacing="2"
+          fill="#b6a596"
+          opacity="0.85">offline, infinite, on-device</text>
+    <text x="0" y="98"
+          font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
+          font-size="26"
+          letter-spacing="2"
+          fill="#b6a596"
+          opacity="0.85">generative lo-fi.</text>
+  </g>
+</svg>
