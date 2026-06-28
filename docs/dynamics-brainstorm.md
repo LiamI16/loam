@@ -1,5 +1,10 @@
 # Dynamics & Transitions — Brainstorm
 
+> **Companion to `docs/dynamics.md`** (which documents what's actually
+> built). This doc is the *strategy* — generator primitives, why we
+> layer them by timescale, the attractor idea. Read this for design
+> intent; read `dynamics.md` to map decisions to code.
+
 > The core bet of the project. "Infinite" is easy (loop forever). "Always
 > changing without character drift and without *moments*" is the actual hard
 > problem. This is exploratory — capturing the design space, not committing.

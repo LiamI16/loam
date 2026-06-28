@@ -148,7 +148,6 @@ same character." Probably the latter for v1, but worth deciding explicitly.
 - Manifest + settings schema
 - Where UI lives (ribbon? sidebar? status bar? command palette?)
 - Audio lifecycle across note switches and plugin disable
-- Mobile Obsidian story (or explicit "desktop only" decision)
 
 ### Note-to-seed mapping
 The "thematic to note" idea from the growth-space discussion — every note
@@ -176,15 +175,10 @@ demo. Specific budget items still open:
 
 ## Engineering hygiene
 
-### License file
-MIT is declared in `README.md`; verify a `LICENSE` file exists at the
-repo root.
-
 ### Performance budget
 No target stated. Needs:
 - CPU target on a midrange laptop (single-digit % at the demo's voice count?)
 - Max simultaneous voices
-- Mobile / Obsidian-mobile feasibility
 - Behavior under tab backgrounding (Web Audio is throttled — does the engine
   pause cleanly?)
 
@@ -198,7 +192,6 @@ No target stated. Needs:
 ### Browser / Web Audio compatibility
 - Minimum supported versions
 - Safari quirks (AudioContext autoplay, Web Audio nuances)
-- Mobile Web Audio (touch-to-start gesture handling)
 
 ---
 
@@ -222,13 +215,3 @@ revisit if users ask.
 From `ornaments.md` §7 still-open. The bell-tone is the suspect. Decide once
 we can hear long sessions.
 
----
-
-## Recently resolved (delete after a few sessions)
-
-- **Voice-leading solver design** (Stage 6) — done. See
-  `harmony/voicing.ts`.
-- **Density slider's role in user-facing knob surface** (2026-06-22) —
-  density removed; principle clarified.
-- **L-system melody contour** — superseded by the germ-driven melody
-  rewrite (Phases 1–3). See `docs/melody.md`.

@@ -1,5 +1,11 @@
 # Ornaments — rate, refractory, and distribution
 
+> **Status:** Stage 8 partially shipped. The rate/refractory framing
+> (§1–2) drives vinyl crackle in `packages/synth-tone` today; the
+> bell-tone ornament and other ornament types described in §3+ are
+> design notes, not yet implemented. The point-process math is the
+> load-bearing part — treat the specific ornament catalog as deferred.
+
 > A revision of the strict "never produce a salient moment" rule
 > (see `README.md`'s cardinal-rule framing and `dynamics-brainstorm.md`).
 > Pure featurelessness tips past

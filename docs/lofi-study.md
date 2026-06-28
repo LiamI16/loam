@@ -1,5 +1,11 @@
 # Lo-fi Music Theory — Survey for Seed-Driven Generation
 
+> **Status:** §1–9 are reference taxonomy actively informing Stage 6+
+> harmony/melody/voicing decisions. §10–12 (subgenre archetypes, knob
+> surface, mix knobs) are *design space only* — catalogued as candidates
+> but not yet selected/implemented. §11's density slider was explicitly
+> removed in Stage 6.5. Don't read §10–12 as canonical behavior.
+
 > Reference document. The goal: catalogue every lever we can turn that still
 > sounds *lo-fi* — so the seed can pick a flavor (Nujabes-ish jazz, dusty
 > boom-bap, bossa, ambient-tilted, 70s soul-sample) without ever leaving the
