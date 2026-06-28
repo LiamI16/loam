@@ -17,7 +17,7 @@
 
 ## Try Loam
 
-**→ [liami16.github.io/loam](https://liami16.github.io/loam/)**
+**→ <a href="https://liami16.github.io/loam/" target="_blank" rel="noopener noreferrer">liami16.github.io/loam</a>**
 
 Loads in any modern browser. Tap the glowing orb (the "ember") to
 start. **Works offline after your first visit** — open the URL again
