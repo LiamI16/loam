@@ -182,8 +182,8 @@ interface Engine {
 }
 ```
 
-These shapes are first-draft — the actual API will firm up during Stage 2
-of `current-stage-list.md`.
+These shapes are first-draft — the actual API firmed up during Phase 1
+Stage 2 (see `archive/phase1-stage-list.md`).
 
 ---
 

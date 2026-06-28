@@ -6,8 +6,8 @@
 > incompatible-to-split ways. Ordered by listening impact, not by
 > architectural category.
 >
-> Replaces `current-stage-list.md` (deleted). `phase1-stage-list.md`
-> retained as the historical prototype-port log.
+> Phase 1 (prototype port, Stages 1–4) is closed; see
+> `archive/phase1-stage-list.md` for that log.
 >
 > **Origin (2026-06-17):** during Stage 7c.2 + per-seed BPM listen
 > tests, output read as "drift on top of a crude event generator."
@@ -24,7 +24,7 @@ Compact summary — full implementation notes in the linked docs.
 
 | Stage | What | Locks |
 |---|---|---|
-| Phase 1 | Foundation, prototype port (Stages 1–4) | `phase1-stage-list.md` |
+| Phase 1 | Foundation, prototype port (Stages 1–4) | `archive/phase1-stage-list.md` |
 | Stage 5 | fBm `ParamStream` + density / evo-filter dynamics | `docs/dynamics.md` |
 | Stage 6 | Markov chords (Dirichlet-perturbed) + greedy voice-leading | `docs/harmony.md` |
 | Stage 6.5 | User speed multiplier; BPM slider removed (redundant) | inline |
@@ -133,7 +133,7 @@ A (rhythm) and C (voicing variety) are done. Remaining:
 - **D — Vocabulary expansion + chromatic approach.**
   - **Altered dominants** (`7♯5`, `7♭5`, `7♭9`) added to
     `harmony/chords.ts`; soft chromatic-friction resolutions per
-    `docs/external-review.md` §A.4. Genre tension flag — these are
+    `archive/external-review.md` §A.4. Genre tension flag — these are
     jazzier than calm lofi; might want to defer or scope tightly.
   - **Chromatic approach tones.** One voice slides chromatically at
     slot transition instead of jumping.
@@ -712,11 +712,11 @@ synth (replacing crackle's BELL reuse), `channels.ts`.
 
 - **Discrete dynamics overrides** (Eno's Oblique Strategies as a
   third dynamics primitive — windowed state change distinct from
-  fBm and ornaments). Captured in `docs/external-review.md` §B.
+  fBm and ornaments). Captured in `archive/external-review.md` §B.
 
 - **Ambient-mode reservations** (reverb freeze, granular synthesis,
   pitch-shifted delays) — only relevant if/when an Ambient engine
-  exists alongside Ember. See `docs/external-review.md` §C.
+  exists alongside Ember. See `archive/external-review.md` §C.
 
 ---
 

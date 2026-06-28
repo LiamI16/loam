@@ -36,8 +36,7 @@ plugin, sharing one engine.
   something's decided.
 - **Other `docs/*.md`** — discoverable via `ls docs/`. Read on demand
   when working in a relevant area (harmony, dynamics, ornaments,
-  lofi-study, external-review, stack).
-- **`phase1-stage-list.md`** — historical Phase 1 log. Don't edit.
+  lofi-study, stack, mobile).
 
 ## Locked design decisions
 
@@ -61,8 +60,7 @@ to slow down, not speed up.
 ## Working notes
 
 - **`docs/` for design notes**, never the repo root. Only `.md` files
-  allowed at root: `README.md`, `CLAUDE.md`, `stage-list.md`,
-  `phase1-stage-list.md`.
+  allowed at root: `README.md`, `CLAUDE.md`, `stage-list.md`.
 - **"Knob"** = seed-controlled parameter.
 - **Engine fingerprint** (`packages/core/test/ember-engine.test.ts`)
   pinned at `Seed.from(42n)` with `bpm: 74`. Any change that shifts
