@@ -50,7 +50,12 @@ function applyTheme(rawId: string, announce = false): void {
 
   // Morph the metaphor: title + the idle "tap the <hero>" prompt. Only
   // rewrite the hint while idle so it never clobbers "listening…"/"paused".
-  document.title = `loam · ${theme.label}`;
+  // In an installed (standalone) PWA the browser prepends the manifest
+  // name to the window title, so any non-empty document.title renders as
+  // "Loam – <title>". Empty it there so the title bar shows just "Loam";
+  // keep "Loam" for a normal browser tab (where an empty title would fall
+  // back to showing the URL).
+  document.title = window.matchMedia('(display-mode: standalone)').matches ? '' : 'Loam';
   const hintEl = document.getElementById('hint');
   if (hintEl?.textContent?.startsWith('tap the')) {
     hintEl.textContent = `tap the ${theme.hero} to begin`;
