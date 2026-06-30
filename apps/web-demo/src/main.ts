@@ -394,7 +394,11 @@ const uiState: { rainMode: RainMode; rainPhase: 'heavy' | 'light'; vinyl: boolea
 const RAIN_STEADY_DB = -33; // user-toggled "on" mode
 const RAIN_HEAVY_DB = -33; // cycle: foreground rain
 const RAIN_LIGHT_DB = -50; // cycle: rain through a wall — still ambient, never silent
-const RAIN_SILENT_DB = -60; // dedicated "off" mode; -∞ would break rampTo
+// Dedicated "off" mode. Finite (−∞ would break rampTo) but below the chain's
+// rain-source gate (RAIN_OFF_THRESHOLD_DB = −110 in lofi.ts) so the chain
+// stops the pink-noise source + idle bandpass biquads once the fade settles,
+// instead of leaving them running silently (docs/audio-cpu-plan.md Task 2).
+const RAIN_SILENT_DB = -120;
 
 function rainTargetDb(): number {
   if (uiState.rainMode === 'on') return RAIN_STEADY_DB;

@@ -88,21 +88,37 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
     modulation: { type: 'triangle' as const },
     modulationEnvelope: { attack: 0.02, decay: 0.4, sustain: 0.1, release: 0.6 },
   };
-  const keysChord = new Tone.PolySynth(Tone.FMSynth, {
-    ...keysSharedShape,
-    // Sustain raised 0.28 → 0.55 (2026-06-17) so hold-with-refresh and
-    // pure-hold patterns' multi-second sustained ring is actually
-    // audible. With sustain 0.28, sustained held chords sat at ~0.15
-    // amplitude — quieter than the soft refresh taps that punctuated
-    // them, producing a "discrete attacks over near-silence" feel
-    // (i.e. choppy) instead of "ringing chord with subtle taps."
-    envelope: { attack: 0.03, decay: 0.7, sustain: 0.55, release: 0.8 },
-    volume: -15,
+  // maxPolyphony caps voices to measured need + ~50% margin. Tone defaults to
+  // 32, and a voice's oscillators keep running once started (the envelope only
+  // gates amplitude), so idle-but-running voices inflate the always-on floor.
+  // Phase-0 profiling (scripts/profile-chain.ts) measured the per-synth max
+  // concurrent voices across dense seeds; the caps below are measured-max +
+  // 50% safety (floor 8). No audible change while the cap ≥ real simultaneous
+  // voices. See docs/audio-cpu-plan.md Task 1. maxPolyphony lives on the
+  // PolySynth options object, so these use the `{ voice, options }` form.
+  const keysChord = new Tone.PolySynth({
+    maxPolyphony: 18, // measured max 12 chord voices + 50%
+    voice: Tone.FMSynth,
+    options: {
+      ...keysSharedShape,
+      // Sustain raised 0.28 → 0.55 (2026-06-17) so hold-with-refresh and
+      // pure-hold patterns' multi-second sustained ring is actually
+      // audible. With sustain 0.28, sustained held chords sat at ~0.15
+      // amplitude — quieter than the soft refresh taps that punctuated
+      // them, producing a "discrete attacks over near-silence" feel
+      // (i.e. choppy) instead of "ringing chord with subtle taps."
+      envelope: { attack: 0.03, decay: 0.7, sustain: 0.55, release: 0.8 },
+      volume: -15,
+    },
   }).connect(chorus);
-  const keysMelody = new Tone.PolySynth(Tone.FMSynth, {
-    ...keysSharedShape,
-    envelope: { attack: 0.03, decay: 0.7, sustain: 0.28, release: 0.8 },
-    volume: -8,
+  const keysMelody = new Tone.PolySynth({
+    maxPolyphony: 8, // measured max 4 melody voices; floor of 8
+    voice: Tone.FMSynth,
+    options: {
+      ...keysSharedShape,
+      envelope: { attack: 0.03, decay: 0.7, sustain: 0.28, release: 0.8 },
+      volume: -8,
+    },
   }).connect(chorus);
 
   // ── soft pad (the "blanket") ─────────────────────────────────────
@@ -112,11 +128,19 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
   padWidener.connect(warmth);
   padWidener.connect(padSend);
   padSend.connect(reverb);
-  const pad = new Tone.PolySynth(Tone.AMSynth, {
-    harmonicity: 2,
-    oscillator: { type: 'triangle' },
-    envelope: { attack: 1.4, decay: 0.6, sustain: 0.8, release: 4 },
-    volume: -20,
+  const pad = new Tone.PolySynth({
+    // Pad has the longest release (4 s, below) so its voices overlap most, but
+    // Phase-0 measured only 4 concurrent pad voices across dense seeds (the
+    // engine voices pads sparsely). Floor of 8 doubles that for safety. See
+    // docs/audio-cpu-plan.md Task 1.
+    maxPolyphony: 8,
+    voice: Tone.AMSynth,
+    options: {
+      harmonicity: 2,
+      oscillator: { type: 'triangle' },
+      envelope: { attack: 1.4, decay: 0.6, sustain: 0.8, release: 4 },
+      volume: -20,
+    },
   }).connect(padWidener);
 
   // ── bass voice (separate from pad's low end) ─────────────────────
@@ -294,12 +318,57 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
       adapter.master.volume.rampTo(v, t, startTime);
     },
   });
+  // Rain source gating (docs/audio-cpu-plan.md Task 2). The pink-noise buffer
+  // is ~free, but the two always-on bandpass biquads + gain aren't — and rain
+  // defaults off, so most sessions pay for them for nothing. When the target
+  // level settles at/below the silent floor we `stop()` the source (after any
+  // fade completes, so there's no abrupt cut); when it rises back above we
+  // restart it before ramping up. Tone.Noise recreates its internal
+  // BufferSource on each `start()` (verified in tone@14.9.17 Noise._start), so
+  // stop→start resumes cleanly with no click.
+  const RAIN_OFF_THRESHOLD_DB = -110;
+  let rainPlaying = true; // constructed with .start()
+  let rainStopTimer: ReturnType<typeof setTimeout> | null = null;
+  const cancelPendingStop = (): void => {
+    if (rainStopTimer !== null) {
+      clearTimeout(rainStopTimer);
+      rainStopTimer = null;
+    }
+  };
+  const ensureRainPlaying = (): void => {
+    cancelPendingStop();
+    if (!rainPlaying) {
+      rain.start();
+      rainPlaying = true;
+    }
+  };
+  const stopRain = (): void => {
+    if (rainPlaying) {
+      rain.stop();
+      rainPlaying = false;
+    }
+  };
   adapter.registerParam('bed.rain.level', {
     set: (v) => {
       rainVol.volume.value = v;
+      if (v <= RAIN_OFF_THRESHOLD_DB) stopRain();
+      else ensureRainPlaying();
     },
     ramp: (v, t, startTime) => {
+      const off = v <= RAIN_OFF_THRESHOLD_DB;
+      if (!off) ensureRainPlaying();
       rainVol.volume.rampTo(v, t, startTime);
+      if (off) {
+        // Stop only after the fade-out has fully elapsed.
+        cancelPendingStop();
+        rainStopTimer = setTimeout(
+          () => {
+            rainStopTimer = null;
+            stopRain();
+          },
+          t * 1000 + 50,
+        );
+      }
     },
   });
   // Engine-driven evo-filter sweep (Stage 5 — replaces the static LFO).

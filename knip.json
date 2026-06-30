@@ -4,6 +4,9 @@
   "workspaces": {
     "packages/core": {
       "entry": ["scripts/*.ts"]
+    },
+    "packages/synth-tone": {
+      "entry": ["scripts/*.ts"]
     }
   }
 }
