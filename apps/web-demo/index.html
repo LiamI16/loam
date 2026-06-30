@@ -103,8 +103,13 @@
       inset: 0;
       pointer-events: none;
       z-index: -1;
-      opacity: 0.04;
-      mix-blend-mode: overlay;
+      opacity: 0.05;
+      /* No mix-blend-mode: a full-viewport blend layer is re-composited
+         every frame the page paints — and the breathing ember forces a
+         paint each frame — which pins the CPU/GPU on weak hardware and
+         starves the audio render thread (audible dropouts). Plain alpha
+         over the static background is a cached layer that costs ~nothing;
+         at this opacity the look is indistinguishable. */
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     }
 
@@ -333,14 +338,37 @@
       background: var(--rain-cycle);
       border-color: var(--rain-cycle);
       box-shadow: 0 0 16px color-mix(in srgb, var(--rain-cycle) 28%, transparent);
-      animation: togCycle 6s ease-in-out infinite;
+      position: relative;
+      animation: togCycleDim 6s ease-in-out infinite;
+      will-change: opacity;
     }
-    @keyframes togCycle {
-      0%, 100% { box-shadow: 0 0 12px color-mix(in srgb, var(--rain-cycle) 20%, transparent); opacity: 0.85; }
-      50%      { box-shadow: 0 0 22px color-mix(in srgb, var(--rain-cycle) 50%, transparent); opacity: 1; }
+    /* The swelling glow is an overlaid layer whose OPACITY animates, not the
+       box-shadow itself: a static shadow is rasterized once and the pulse is
+       a compositor-only opacity fade. Animating `box-shadow` directly forces
+       a full repaint every frame, which pins the CPU/GPU on weak hardware
+       and starves the audio render thread (audible dropouts). */
+    .tog.active.cycle::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      box-shadow: 0 0 22px color-mix(in srgb, var(--rain-cycle) 50%, transparent);
+      animation: togCycleGlow 6s ease-in-out infinite;
+      will-change: opacity;
+    }
+    @keyframes togCycleDim {
+      0%, 100% { opacity: 0.85; }
+      50%      { opacity: 1; }
+    }
+    @keyframes togCycleGlow {
+      0%, 100% { opacity: 0.3; }
+      50%      { opacity: 1; }
     }
     @media (prefers-reduced-motion: reduce) {
-      .tog.active.cycle { animation: none; }
+      .tog.active.cycle,
+      .tog.active.cycle::after { animation: none; }
+      .tog.active.cycle { opacity: 1; }
     }
 
     /* ── seed area ── */
