@@ -18,7 +18,27 @@ import type { ToneAudioAdapter } from '../adapter.js';
  *   - `bed.rain.level`   — rain bed volume (dB)
  *   - `fx.evoFilter.cutoff`, `fx.chorus.depth`, `fx.drumBus.cutoff`
  */
-export function buildLofiChain(adapter: ToneAudioAdapter): void {
+/**
+ * Render-side A/B options for the lofi chain (docs/audio-cpu-plan.md Phase 2).
+ * All audible, all default-off — the web demo flips them from URL flags so a
+ * choice can be judged by ear/CPU before being baked in as the default.
+ */
+export interface LofiChainOptions {
+  /** Use a mono reverb IR (centered tail, ~half the convolution cost) instead
+   * of Tone's stereo IR. Task 3. */
+  monoReverb?: boolean;
+  /** Reverb tail length in seconds (IR length → convolution cost). Defaults to
+   * the historical 7. Applies to both the mono and stereo paths. Task 4. */
+  reverbDecay?: number;
+  /** Drop the always-on brown-bed StereoWidener (slightly narrower bed) for a
+   * small always-on saving. Task 5. */
+  monoBed?: boolean;
+}
+
+const REVERB_DECAY_DEFAULT = 7;
+const REVERB_PREDELAY = 0.02;
+
+export function buildLofiChain(adapter: ToneAudioAdapter, opts: LofiChainOptions = {}): void {
   // ── master & shared reverb return ───────────────────────────────
   const warmth = new Tone.Filter({
     type: 'lowpass',
@@ -29,7 +49,17 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
   // dry signal travels its own path; each instrument's `*Send` gain
   // controls how much of it is fed to the reverb input. The reverb
   // output is 100% wet and gets summed back into warmth.
-  const reverb = new Tone.Reverb({ decay: 7, preDelay: 0.02, wet: 1 }).connect(warmth);
+  //
+  // The convolution reverb is the dominant always-on DSP cost (Phase-0
+  // profiling: ~half the floor on the reporter's Windows machine). A mono IR
+  // ≈ halves it and a shorter decay shortens the IR proportionally — both
+  // audible (narrower / shorter tail), so they're behind A/B flags. When off,
+  // this is the unchanged stereo `Tone.Reverb`. See docs/audio-cpu-plan.md.
+  const reverbDecay = opts.reverbDecay ?? REVERB_DECAY_DEFAULT;
+  const reverb = opts.monoReverb
+    ? buildMonoReverb(reverbDecay, REVERB_PREDELAY)
+    : new Tone.Reverb({ decay: reverbDecay, preDelay: REVERB_PREDELAY, wet: 1 });
+  reverb.connect(warmth);
 
   // ── keys (chord voicings + sparse melody) ────────────────────────
   // Keys keep the chorus + evoFilter coloring from the prototype.
@@ -207,9 +237,15 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
   // the kit now that everything else pans).
   const brownBed = new Tone.Noise('brown').start();
   const brownBedFilter = new Tone.Filter({ type: 'lowpass', frequency: 480 });
-  const brownBedWidener = new Tone.StereoWidener(0.9);
   const brownBedVol = new Tone.Volume(-30);
-  brownBed.chain(brownBedFilter, brownBedWidener, brownBedVol, adapter.master);
+  // monoBed (Task 5) drops the always-on StereoWidener's mid/side math for a
+  // small saving, at the cost of a slightly narrower bed. A/B flag.
+  if (opts.monoBed) {
+    brownBed.chain(brownBedFilter, brownBedVol, adapter.master);
+  } else {
+    const brownBedWidener = new Tone.StereoWidener(0.9);
+    brownBed.chain(brownBedFilter, brownBedWidener, brownBedVol, adapter.master);
+  }
 
   // Toggleable rain (starts silent). Two parallel bandpasses on pink noise:
   // a low/mid "wash" (~1.8 kHz, broad) and a high "sparkle" (~4.5 kHz,
@@ -442,6 +478,43 @@ export function buildLofiChain(adapter: ToneAudioAdapter): void {
       chordEchoSend.gain.rampTo(v, t, startTime);
     },
   });
+}
+
+/**
+ * Mono drop-in for `Tone.Reverb` (Task 3). `Tone.Reverb` hard-codes a *stereo*
+ * IR (independent L/R noise → `OfflineContext(2, …)`), so its ConvolverNode
+ * does 2-channel convolution. Feeding a ConvolverNode a **1-channel** IR
+ * convolves both input channels with the same response — a centered tail at
+ * ~half the cost.
+ *
+ * The IR is generated exactly like Tone's `Reverb.generate()` (white noise
+ * through a gain envelope: silent until `preDelay`, then an exponential
+ * approach to 0 over `decay`) but in a mono `OfflineContext`, and normalize is
+ * left at the ConvolverNode default (true) to match `Tone.Reverb`'s level. The
+ * IR render is async, so — like `Tone.Reverb` — the convolver is silent for the
+ * few ms until it resolves; the returned node can be wired immediately.
+ *
+ * Returned as a bare `Tone.Convolver` (no wet/dry mix), which is equivalent to
+ * `Tone.Reverb({ wet: 1 })`: a 100%-wet send/return.
+ */
+function buildMonoReverb(decay: number, preDelay: number): Tone.Convolver {
+  const conv = new Tone.Convolver({ normalize: true });
+  void generateMonoIR(decay, preDelay).then((buffer) => {
+    conv.buffer = buffer;
+  });
+  return conv;
+}
+
+function generateMonoIR(decay: number, preDelay: number): Promise<Tone.ToneAudioBuffer> {
+  const context = new Tone.OfflineContext(1, decay + preDelay, Tone.getContext().sampleRate);
+  const noise = new Tone.Noise({ context }).start(0);
+  const gainNode = new Tone.Gain({ context }).toDestination();
+  noise.connect(gainNode);
+  // Mirror Tone.Reverb.generate(): predelay gate, then exponential decay.
+  gainNode.gain.setValueAtTime(0, 0);
+  gainNode.gain.setValueAtTime(1, preDelay);
+  gainNode.gain.exponentialApproachValueAtTime(0, preDelay, decay);
+  return context.render();
 }
 
 /** Map a 0..1 warmth slider to a low-pass cutoff in Hz.

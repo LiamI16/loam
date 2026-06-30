@@ -1,1 +1,1 @@
-export { buildLofiChain, volToDb, volToGain, warmHz } from './lofi.js';
+export { buildLofiChain, type LofiChainOptions, volToDb, volToGain, warmHz } from './lofi.js';

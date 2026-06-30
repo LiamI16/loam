@@ -26,7 +26,7 @@
 
 import { Channels, EmberEngine, type EngineEvent, type NoteEvent, Seed } from '@loam/core';
 import * as Tone from 'tone';
-import { buildLofiChain } from '../src/chains/lofi.js';
+import { buildLofiChain, type LofiChainOptions } from '../src/chains/lofi.js';
 import type { ChannelRegistration, ParamSetter } from '../src/types.js';
 
 const SEEDS = [42n, 1n, 2n, 7n, 99n, 1234n];
@@ -108,19 +108,24 @@ class StubAdapter {
   }
 }
 
+interface RenderOpts {
+  rainOff?: boolean;
+  lofi?: LofiChainOptions;
+}
+
 /** (A) Render the full chain for one seed and return render wall-clock ms. */
-async function renderFull(seed: bigint, rainOff = false): Promise<number> {
+async function renderFull(seed: bigint, ro: RenderOpts = {}): Promise<number> {
   const events = engineEvents(seed, RENDER_SECONDS);
   const t0 = performance.now();
   await Tone.Offline(
     () => {
       const adapter = new StubAdapter();
       // biome-ignore lint/suspicious/noExplicitAny: stub matches the structural surface buildLofiChain uses.
-      buildLofiChain(adapter as any);
+      buildLofiChain(adapter as any, ro.lofi);
       // Rain defaults on (.start()); the UI sets it silent when off. Mirror the
       // off path so Task-2's source-gating shows up in the render (sets the
       // level below the chain's stop threshold → source + biquads stop).
-      if (rainOff) adapter.params.get('bed.rain.level')?.set(-120);
+      if (ro.rainOff) adapter.params.get('bed.rain.level')?.set(-120);
       for (const ev of events) {
         if (ev.kind === 'note') {
           const reg = adapter.channels.get(ev.channel);
@@ -148,9 +153,9 @@ function median(xs: number[]): number {
   return s.length % 2 ? hi : (lo + hi) / 2;
 }
 
-async function fullGraph(label: string, rainOff = false): Promise<number> {
+async function fullGraph(label: string, ro: RenderOpts = {}): Promise<number> {
   const times: number[] = [];
-  for (const seed of SEEDS) times.push(await renderFull(seed, rainOff));
+  for (const seed of SEEDS) times.push(await renderFull(seed, ro));
   const med = median(times);
   console.log(
     `  ${label.padEnd(28)} median ${med.toFixed(1)} ms  (per-seed: ${times
@@ -220,10 +225,16 @@ async function main(): Promise<void> {
   console.log(`  -> mono+decay3:    ${(mono3 / stereo7).toFixed(2)}× of current`);
 
   console.log('\n=== (A) Full-graph render time ===');
-  console.log('  (maxPolyphony caps from Task 1 are baked into buildLofiChain now)');
-  const capped = await fullGraph('caps on, rain on');
-  const cappedRainOff = await fullGraph('caps on, rain OFF (Task 2)', true);
+  console.log('  (Phase-1 caps baked in; reverb IR is async so the convolver may');
+  console.log('   render silent here — trust part (B) for the reverb A/B, not these)');
+  const capped = await fullGraph('Phase 1 (stereo reverb)');
+  const cappedRainOff = await fullGraph('  + rain OFF (Task 2)', { rainOff: true });
   console.log(`  -> rain-off saving: ${(100 * (1 - cappedRainOff / capped)).toFixed(1)}%`);
+
+  console.log('\n=== (A2) Phase-2 flags — exercises mono-reverb code path ===');
+  await fullGraph('mono reverb (Task 3)', { lofi: { monoReverb: true } });
+  await fullGraph('mono reverb + decay 3', { lofi: { monoReverb: true, reverbDecay: 3 } });
+  await fullGraph('mono bed (Task 5)', { lofi: { monoBed: true } });
 }
 
 main().then(

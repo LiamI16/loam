@@ -1,6 +1,12 @@
 import { registerSW } from 'virtual:pwa-register';
 import { EmberEngine, Seed } from '@loam/core';
-import { buildLofiChain, ToneAudioAdapter, volToDb, warmHz } from '@loam/synth-tone';
+import {
+  buildLofiChain,
+  type LofiChainOptions,
+  ToneAudioAdapter,
+  volToDb,
+  warmHz,
+} from '@loam/synth-tone';
 
 // Engine's home tempo is now seed-derived (each seed picks its own
 // BPM from a range). User-facing tempo control is the speed slider,
@@ -416,9 +422,44 @@ function buildEngine(seedValue: bigint): EmberEngine {
   });
 }
 
+// Phase-2 audio-CPU A/B flags (docs/audio-cpu-plan.md). Dev switches for
+// comparing the audible reverb/bed savings by ear + CPU before a default is
+// baked in. Read from the URL (`?monoverb=1`, `?reverbdecay=3`, `?monobed=1`)
+// and persisted to localStorage so a choice survives navigation; a URL value
+// always wins and updates the stored value. All default off → unchanged sound.
+function readLofiFlags(): LofiChainOptions {
+  const qs = new URLSearchParams(location.search);
+  const bool = (key: string, storeKey: string): boolean => {
+    const raw = qs.get(key);
+    if (raw !== null) {
+      const on = raw === '1' || raw === 'true';
+      localStorage.setItem(storeKey, on ? '1' : '0');
+      return on;
+    }
+    return localStorage.getItem(storeKey) === '1';
+  };
+  const num = (key: string, storeKey: string): number | undefined => {
+    const raw = qs.get(key);
+    if (raw !== null) {
+      const n = Number(raw);
+      if (Number.isFinite(n)) {
+        localStorage.setItem(storeKey, String(n));
+        return n;
+      }
+    }
+    const stored = localStorage.getItem(storeKey);
+    return stored !== null ? Number(stored) : undefined;
+  };
+  return {
+    monoReverb: bool('monoverb', 'loam.flag.monoverb'),
+    reverbDecay: num('reverbdecay', 'loam.flag.reverbdecay'),
+    monoBed: bool('monobed', 'loam.flag.monobed'),
+  };
+}
+
 function buildAudio(seedValue: bigint): { adapter: ToneAudioAdapter; engine: EmberEngine } {
   const a = new ToneAudioAdapter();
-  buildLofiChain(a);
+  buildLofiChain(a, readLofiFlags());
 
   const e = buildEngine(seedValue);
   a.setEngine(e);
