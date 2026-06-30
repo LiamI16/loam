@@ -198,10 +198,27 @@ Out of scope (v1):
 
 ### Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version: the core
-engine is framework-agnostic and seed-deterministic — changes that
-shift the engine fingerprint (`packages/core/test/ember-engine.test.ts`)
-are deliberate seed-format breaks and need to be flagged as such.
+Loam is a solo project. I work on it in my own time and at my own
+pace, and I'm glad you're here. The MIT license is an invitation —
+fork freely if you want to take Loam somewhere I won't.
+
+If you'd like to engage with this repo directly:
+
+- **Bug reports, ideas, and discussion:** open an issue. I read
+  everything, and I'll reply when I can.
+- **Small fixes** (typos, obvious bugs): PRs welcome and quick to
+  merge.
+- **Larger ideas** — a new parameter, a new musical layer, a new
+  preset, a new theme: open an issue first describing what you want
+  to build. We can figure out together whether it slots in or fits
+  better as a fork.
+
+The rough split: **extending Loam** (a new piece slotting into the
+existing lo-fi engine) tends to land as a PR; **redirecting Loam** (a
+new genre engine, sample-based instruments, ML, big refactors) tends
+to be cleaner as a fork.
+
+Engineering specifics in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 
