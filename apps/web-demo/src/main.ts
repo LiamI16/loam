@@ -459,8 +459,28 @@ function readLofiFlags(): LofiChainOptions {
   };
 }
 
+// Global audio-context sample rate (the CPU lever — docs/audio-cpu-plan.md).
+// `?samplerate=32000` (or 22050) lowers whole-graph DSP ~linearly; persisted to
+// localStorage. Only takes effect on a fresh page load, since the context is
+// created once at the first adapter construction. Undefined → Tone's default
+// (hardware rate). Sane bounds guard against a typo bricking audio.
+function readSampleRateFlag(): number | undefined {
+  const qs = new URLSearchParams(location.search);
+  const key = 'loam.flag.samplerate';
+  const raw = qs.get('samplerate');
+  if (raw !== null) {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 8000 && n <= 96000) {
+      localStorage.setItem(key, String(n));
+      return n;
+    }
+  }
+  const stored = localStorage.getItem(key);
+  return stored !== null ? Number(stored) : undefined;
+}
+
 function buildAudio(seedValue: bigint): { adapter: ToneAudioAdapter; engine: EmberEngine } {
-  const a = new ToneAudioAdapter();
+  const a = new ToneAudioAdapter({ sampleRate: readSampleRateFlag() });
   buildLofiChain(a, readLofiFlags());
 
   const e = buildEngine(seedValue);

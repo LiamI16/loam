@@ -27,12 +27,23 @@ const STOP_FADE_SEC = 0.01;
 /** Swap Tone's default audio context for one with `latencyHint: 'playback'`
  * — a ~250–500 ms buffer that survives scroll/background-tab hiccups without
  * audible glitches. The default `'interactive'` hint targets ~10–25 ms,
- * which is too tight for sustained ambient playback. Idempotent. */
+ * which is too tight for sustained ambient playback. Idempotent.
+ *
+ * `sampleRate` (optional) lowers the whole-graph render rate — the single
+ * biggest CPU lever, since it scales *all* DSP (the ~70% note-synthesis cost,
+ * not just the always-on floor). Web Audio has one rate per context, so this
+ * is global. 32 kHz (Nyquist 16 kHz) is transparent-to-authentic for lofi
+ * (classic-sampler territory) at ~−21% DSP; lower trades top-end for more.
+ * Tone's `ContextOptions` has no `sampleRate`, so we wrap a raw AudioContext.
+ * See docs/audio-cpu-plan.md. */
 let toneContextConfigured = false;
-function configureToneContextOnce(): void {
+function configureToneContextOnce(sampleRate?: number): void {
   if (toneContextConfigured) return;
   toneContextConfigured = true;
-  Tone.setContext(new Tone.Context({ latencyHint: 'playback' }));
+  const context = sampleRate
+    ? new Tone.Context(new AudioContext({ latencyHint: 'playback', sampleRate }))
+    : new Tone.Context({ latencyHint: 'playback' });
+  Tone.setContext(context);
 }
 
 /** Inline Web Worker source. The worker exists for one reason: browsers
@@ -88,12 +99,18 @@ export class ToneAudioAdapter {
    * events still queued from a previous run (Tone's synths reject those). */
   private latestScheduledAudioTime = 0;
 
-  constructor() {
+  /**
+   * @param opts.sampleRate Optional render sample rate for the global audio
+   *   context (the CPU lever — see `configureToneContextOnce`). Only takes
+   *   effect on the *first* adapter constructed (the context is process-global
+   *   and idempotent); later values are ignored.
+   */
+  constructor(opts: { sampleRate?: number } = {}) {
     // Configure the global Tone context with a playback-grade buffer before
     // creating any nodes — must happen first because attached nodes are
     // bound to whatever context is active at construction. Guarded so
     // multiple adapter instances don't spawn multiple contexts.
-    configureToneContextOnce();
+    configureToneContextOnce(opts.sampleRate);
     this.out = new Tone.Gain(0).toDestination();
     this.master = new Tone.Volume(0).connect(this.out);
   }
