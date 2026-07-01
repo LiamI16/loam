@@ -282,11 +282,14 @@ Measurement harness lives at `packages/synth-tone/scripts/profile-chain.ts`
   (was 7) + mono bed. Ear-confirmed identical (removed reverb tail is all
   below −66 dB); ~12% DSP cut. Overridable for regression A/B via
   `?monoverb=0` / `?reverbdecay=7` / `?monobed=0`.
-- **Sample-rate flag** (`2dc074d`): `?samplerate=32000` (bounds 8k–96k). The
-  real CPU lever — 32 kHz −21%, 22.05 kHz −35% whole-graph. Global + applied
-  on first adapter construction (needs a page reload to change). Default unset
-  → hardware rate. Still to validate on Windows: confirm Chrome honours the
-  requested rate rather than resampling to 48 kHz hardware and eating the win.
+- **Sample rate → 32 kHz default** (`2dc074d`, defaulted after ear-check). The
+  real CPU lever — 32 kHz −21%, 22.05 kHz −35% whole-graph. Global + applied on
+  first adapter construction (needs a page reload to change). 32 kHz is
+  transparent (16 kHz Nyquist, above most hearing + lofi's rolled-off highs);
+  22.05 kHz stays opt-in (audible dulling + long-chord phase artefacts).
+  Override via `?samplerate=44100` / `=22050` (bounds 8k–96k). Still to
+  validate on Windows: confirm Chrome honours the requested rate rather than
+  resampling to 48 kHz hardware and eating the win.
 
 ### Direction: CPU first, then aesthetic (two SEPARATE workstreams)
 

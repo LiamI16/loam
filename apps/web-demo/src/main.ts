@@ -460,11 +460,15 @@ function readLofiFlags(): LofiChainOptions {
 }
 
 // Global audio-context sample rate (the CPU lever — docs/audio-cpu-plan.md).
-// `?samplerate=32000` (or 22050) lowers whole-graph DSP ~linearly; persisted to
-// localStorage. Only takes effect on a fresh page load, since the context is
-// created once at the first adapter construction. Undefined → Tone's default
-// (hardware rate). Sane bounds guard against a typo bricking audio.
-function readSampleRateFlag(): number | undefined {
+// Defaults to 32 kHz: a ~21% whole-graph DSP cut that's genuinely transparent
+// (16 kHz Nyquist — above most adults' hearing, and lofi rolls off the highs
+// anyway; 22.05 kHz would risk audible dulling + long-chord phase artefacts, so
+// it stays opt-in). Override with `?samplerate=44100` (restore hardware-ish
+// rate) or `=22050` (performance mode); persisted to localStorage. Only takes
+// effect on a fresh page load — the context is created once at the first
+// adapter construction. Sane bounds guard against a typo bricking audio.
+const DEFAULT_SAMPLE_RATE = 32000;
+function readSampleRateFlag(): number {
   const qs = new URLSearchParams(location.search);
   const key = 'loam.flag.samplerate';
   const raw = qs.get('samplerate');
@@ -476,7 +480,7 @@ function readSampleRateFlag(): number | undefined {
     }
   }
   const stored = localStorage.getItem(key);
-  return stored !== null ? Number(stored) : undefined;
+  return stored !== null ? Number(stored) : DEFAULT_SAMPLE_RATE;
 }
 
 function buildAudio(seedValue: bigint): { adapter: ToneAudioAdapter; engine: EmberEngine } {
