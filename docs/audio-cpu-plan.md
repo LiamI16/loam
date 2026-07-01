@@ -287,9 +287,26 @@ Measurement harness lives at `packages/synth-tone/scripts/profile-chain.ts`
   first adapter construction (needs a page reload to change). 32 kHz is
   transparent (16 kHz Nyquist, above most hearing + lofi's rolled-off highs);
   22.05 kHz stays opt-in (audible dulling + long-chord phase artefacts).
-  Override via `?samplerate=44100` / `=22050` (bounds 8k–96k). Still to
-  validate on Windows: confirm Chrome honours the requested rate rather than
-  resampling to 48 kHz hardware and eating the win.
+  Override via `?samplerate=44100` / `=22050` (bounds 8k–96k).
+
+### Status (2026-07-01)
+
+**CPU-first workstream complete and shipped/deployed.** Net effect on the live
+site vs the original chain: **~30% less DSP**, all ear-transparent (Phase 1 ~0%
+typical + Phase 2 ~12% + 32 kHz ~21%, stacked). The engine fingerprint is
+unchanged throughout — every change was render-side.
+
+- **Sample-rate mechanism confirmed honoured** by Chrome:
+  `new AudioContext({ sampleRate: 32000 }).sampleRate` returns `32000` (not the
+  44100 hardware rate), so the graph genuinely renders at 32 kHz and resamples
+  to hardware at output (the "resampled at 44.1k" seen in `chrome://media-
+  internals` is that expected output stage, not a failure).
+- **Open item — real-world CPU payoff on the reporter's Windows machine.** Not
+  yet measured; the owner lacks access and is awaiting a GitHub-issue response.
+  Expectation: at least the offline ratios (reverb share is larger on Windows'
+  ~2× audio stack), though Windows process-CPU jitter (±3–5 pts) may under-read
+  the true delta — the clean A/B is deployed 32 kHz vs `?samplerate=44100` in
+  the same session. This is the only thing gating "done" for CPU.
 
 ### Direction: CPU first, then aesthetic (two SEPARATE workstreams)
 
