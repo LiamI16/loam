@@ -258,3 +258,46 @@ A/B `?monobed=1` by ear (bed width is subtle).
 3. **Task 2 (rain gating)** → measure. → **CHECKPOINT: stop if target met.**
 4. Only if needed: flag plumbing → **Task 3 (mono reverb)** → measure/ear →
    Task 4 (decay) / Task 5 (mono bed) as required.
+
+---
+
+## Progress & decisions (living — updated 2026-07-01)
+
+Measurement harness lives at `packages/synth-tone/scripts/profile-chain.ts`
+(run `profile-chain.sh`; offline `OfflineAudioContext` render-timing via
+`node-web-audio-api`). Ratios port to Windows; absolutes don't.
+
+### Cost composition (measured, Mac)
+
+- **Note synthesis (FM/AM voices) ≈ 70% of total DSP.**
+- Always-on floor ≈ 30%, of which reverb ≈ 43% (≈ 13% of total).
+- Implication: floor-side work (Phases 1–2) caps out around **~12%**. Only the
+  global sample rate scales the dominant 70%.
+
+### Shipped
+
+- **Phase 1** (`fdba5f4`): polyphony caps (chord 18 / melody 8 / pad 8, from
+  measured max 12/4/4) + rain-source gating. ~free tidy-up, no audible change.
+- **Phase 2 baked as defaults** (`ab39194`): mono reverb + `reverbDecay 3`
+  (was 7) + mono bed. Ear-confirmed identical (removed reverb tail is all
+  below −66 dB); ~12% DSP cut. Overridable for regression A/B via
+  `?monoverb=0` / `?reverbdecay=7` / `?monobed=0`.
+- **Sample-rate flag** (`2dc074d`): `?samplerate=32000` (bounds 8k–96k). The
+  real CPU lever — 32 kHz −21%, 22.05 kHz −35% whole-graph. Global + applied
+  on first adapter construction (needs a page reload to change). Default unset
+  → hardware rate. Still to validate on Windows: confirm Chrome honours the
+  requested rate rather than resampling to 48 kHz hardware and eating the win.
+
+### Direction: CPU first, then aesthetic (two SEPARATE workstreams)
+
+- **CPU = global context sample rate.** One rate per Web Audio context; you
+  cannot run parts at different real rates without rewriting synths as low-rate
+  AudioWorklets. 32 kHz (Nyquist 16 kHz) is transparent-to-authentic for lofi.
+- **Per-part downsampling is AESTHETIC only, not a CPU optimization.** In Web
+  Audio it's a decimation/bitcrush *effect* (Tone.BitCrusher = sample-and-hold
+  at full rate) → it *adds* CPU. Anchor drums to **26.04 kHz (SP-1200)**, the
+  canonical boom-bap crush, not a generic high end; keys ~32 kHz; bass/beds
+  clean. Fits the roadmap — `lofi.ts` already flags bitcrush / wow-flutter /
+  tape-hiss as missing authentic textures. The two reinforce: a low global
+  rate is authentic (classic-sampler territory), and per-part crush layers on
+  the grit a clean band-limit lacks.
