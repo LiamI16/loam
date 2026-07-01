@@ -19,23 +19,27 @@ import type { ToneAudioAdapter } from '../adapter.js';
  *   - `fx.evoFilter.cutoff`, `fx.chorus.depth`, `fx.drumBus.cutoff`
  */
 /**
- * Render-side A/B options for the lofi chain (docs/audio-cpu-plan.md Phase 2).
- * All audible, all default-off — the web demo flips them from URL flags so a
- * choice can be judged by ear/CPU before being baked in as the default.
+ * Render-side options for the lofi chain (docs/audio-cpu-plan.md Phase 2).
+ *
+ * These were A/B'd by ear + offline render-timing and found audibly identical
+ * to the old stereo/decay-7 chain while cutting ~12% of total DSP, so they are
+ * now the **defaults**. Each option is left overridable (the web demo exposes
+ * `?monoverb=0` / `?reverbdecay=7` / `?monobed=0`) so the pre-Phase-2 sound can
+ * be restored for regression comparison without a rebuild. Omitted → default.
  */
 export interface LofiChainOptions {
-  /** Use a mono reverb IR (centered tail, ~half the convolution cost) instead
-   * of Tone's stereo IR. Task 3. */
+  /** Mono reverb IR (centered tail, ~half the convolution cost) vs Tone's
+   * stereo IR. Task 3. Default true; pass false for the old stereo IR. */
   monoReverb?: boolean;
-  /** Reverb tail length in seconds (IR length → convolution cost). Defaults to
-   * the historical 7. Applies to both the mono and stereo paths. Task 4. */
+  /** Reverb tail length in seconds (IR length → convolution cost). Applies to
+   * both the mono and stereo paths. Task 4. Default 3 (was 7). */
   reverbDecay?: number;
   /** Drop the always-on brown-bed StereoWidener (slightly narrower bed) for a
-   * small always-on saving. Task 5. */
+   * small always-on saving. Task 5. Default true; pass false to re-widen. */
   monoBed?: boolean;
 }
 
-const REVERB_DECAY_DEFAULT = 7;
+const REVERB_DECAY_DEFAULT = 3;
 const REVERB_PREDELAY = 0.02;
 
 export function buildLofiChain(adapter: ToneAudioAdapter, opts: LofiChainOptions = {}): void {
@@ -50,15 +54,18 @@ export function buildLofiChain(adapter: ToneAudioAdapter, opts: LofiChainOptions
   // controls how much of it is fed to the reverb input. The reverb
   // output is 100% wet and gets summed back into warmth.
   //
-  // The convolution reverb is the dominant always-on DSP cost (Phase-0
-  // profiling: ~half the floor on the reporter's Windows machine). A mono IR
-  // ≈ halves it and a shorter decay shortens the IR proportionally — both
-  // audible (narrower / shorter tail), so they're behind A/B flags. When off,
-  // this is the unchanged stereo `Tone.Reverb`. See docs/audio-cpu-plan.md.
+  // The convolution reverb is the dominant *always-on* DSP cost (~43% of the
+  // floor in Phase-0 profiling). A mono IR ≈ halves its convolution and a
+  // shorter decay shortens the IR proportionally; profiling + ear-check found
+  // mono + decay-3 audibly indistinguishable from the old stereo/decay-7 tail
+  // (the removed tail is all below −66 dB — see docs/audio-cpu-plan.md), so
+  // both are on by default. `?monoverb=0` / `?reverbdecay=7` restore the old
+  // stereo path for comparison.
   const reverbDecay = opts.reverbDecay ?? REVERB_DECAY_DEFAULT;
-  const reverb = opts.monoReverb
-    ? buildMonoReverb(reverbDecay, REVERB_PREDELAY)
-    : new Tone.Reverb({ decay: reverbDecay, preDelay: REVERB_PREDELAY, wet: 1 });
+  const reverb =
+    (opts.monoReverb ?? true)
+      ? buildMonoReverb(reverbDecay, REVERB_PREDELAY)
+      : new Tone.Reverb({ decay: reverbDecay, preDelay: REVERB_PREDELAY, wet: 1 });
   reverb.connect(warmth);
 
   // ── keys (chord voicings + sparse melody) ────────────────────────
@@ -239,8 +246,10 @@ export function buildLofiChain(adapter: ToneAudioAdapter, opts: LofiChainOptions
   const brownBedFilter = new Tone.Filter({ type: 'lowpass', frequency: 480 });
   const brownBedVol = new Tone.Volume(-30);
   // monoBed (Task 5) drops the always-on StereoWidener's mid/side math for a
-  // small saving, at the cost of a slightly narrower bed. A/B flag.
-  if (opts.monoBed) {
+  // small saving, at the cost of a slightly narrower bed. On by default (it was
+  // a bigger always-on cost than expected — ~5% of total DSP — and the width
+  // change is imperceptible); `?monobed=0` re-widens.
+  if (opts.monoBed ?? true) {
     brownBed.chain(brownBedFilter, brownBedVol, adapter.master);
   } else {
     const brownBedWidener = new Tone.StereoWidener(0.9);

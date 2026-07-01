@@ -422,21 +422,23 @@ function buildEngine(seedValue: bigint): EmberEngine {
   });
 }
 
-// Phase-2 audio-CPU A/B flags (docs/audio-cpu-plan.md). Dev switches for
-// comparing the audible reverb/bed savings by ear + CPU before a default is
-// baked in. Read from the URL (`?monoverb=1`, `?reverbdecay=3`, `?monobed=1`)
-// and persisted to localStorage so a choice survives navigation; a URL value
-// always wins and updates the stored value. All default off → unchanged sound.
+// Phase-2 audio-CPU overrides (docs/audio-cpu-plan.md). The savings are baked
+// in as the chain's defaults (mono reverb + decay 3 + mono bed); these flags
+// only exist to *restore the old sound* for regression comparison —
+// `?monoverb=0`, `?reverbdecay=7`, `?monobed=0`. An unset flag returns
+// undefined so the chain's default applies. A URL value wins and is persisted
+// to localStorage so the override survives navigation.
 function readLofiFlags(): LofiChainOptions {
   const qs = new URLSearchParams(location.search);
-  const bool = (key: string, storeKey: string): boolean => {
+  const bool = (key: string, storeKey: string): boolean | undefined => {
     const raw = qs.get(key);
     if (raw !== null) {
       const on = raw === '1' || raw === 'true';
       localStorage.setItem(storeKey, on ? '1' : '0');
       return on;
     }
-    return localStorage.getItem(storeKey) === '1';
+    const stored = localStorage.getItem(storeKey);
+    return stored === null ? undefined : stored === '1';
   };
   const num = (key: string, storeKey: string): number | undefined => {
     const raw = qs.get(key);

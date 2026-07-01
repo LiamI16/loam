@@ -111,38 +111,55 @@ class StubAdapter {
 interface RenderOpts {
   rainOff?: boolean;
   lofi?: LofiChainOptions;
+  /** Skip all note/param events → measures the always-on "floor" only. */
+  noEvents?: boolean;
+  /** Render sample rate. Defaults to SAMPLE_RATE. Lowering it scales the whole
+   * graph (floor + note synthesis) ~linearly — the biggest single lever. */
+  sampleRate?: number;
 }
 
-/** (A) Render the full chain for one seed and return render wall-clock ms. */
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * (A) Render the full chain for one seed and return the render wall-clock ms.
+ *
+ * Done manually (rather than via `Tone.Offline`) for two reasons: (1) the
+ * reverb IR — stereo `Tone.Reverb` or our mono convolver — is generated in a
+ * *nested* async OfflineContext, so we build the graph, wait for the IR to
+ * actually load, and only THEN start+time `render()`; otherwise the convolver
+ * renders silent and the reverb's cost (the whole point) vanishes into noise.
+ * (2) Timing only `render()` keeps the IR-load wait out of the measurement.
+ */
 async function renderFull(seed: bigint, ro: RenderOpts = {}): Promise<number> {
   const events = engineEvents(seed, RENDER_SECONDS);
-  const t0 = performance.now();
-  await Tone.Offline(
-    () => {
-      const adapter = new StubAdapter();
-      // biome-ignore lint/suspicious/noExplicitAny: stub matches the structural surface buildLofiChain uses.
-      buildLofiChain(adapter as any, ro.lofi);
-      // Rain defaults on (.start()); the UI sets it silent when off. Mirror the
-      // off path so Task-2's source-gating shows up in the render (sets the
-      // level below the chain's stop threshold → source + biquads stop).
-      if (ro.rainOff) adapter.params.get('bed.rain.level')?.set(-120);
-      for (const ev of events) {
-        if (ev.kind === 'note') {
-          const reg = adapter.channels.get(ev.channel);
-          reg?.trigger(ev, ev.time);
-        } else if (ev.kind === 'param') {
-          const setter = adapter.params.get(ev.target);
-          if (!setter) continue;
-          if (ev.rampMs && ev.rampMs > 0) setter.ramp(ev.value, ev.rampMs / 1000, ev.time);
-          else setter.set(ev.value);
-        }
+  const context = new Tone.OfflineContext(2, RENDER_SECONDS, ro.sampleRate ?? SAMPLE_RATE);
+  const original = Tone.getContext();
+  Tone.setContext(context);
+  try {
+    const adapter = new StubAdapter();
+    // biome-ignore lint/suspicious/noExplicitAny: stub matches the structural surface buildLofiChain uses.
+    buildLofiChain(adapter as any, ro.lofi);
+    // Rain defaults on (.start()); the UI sets it silent when off. Mirror the
+    // off path so Task-2's source-gating shows up in the render.
+    if (ro.rainOff) adapter.params.get('bed.rain.level')?.set(-120);
+    for (const ev of ro.noEvents ? [] : events) {
+      if (ev.kind === 'note') {
+        adapter.channels.get(ev.channel)?.trigger(ev, ev.time);
+      } else if (ev.kind === 'param') {
+        const setter = adapter.params.get(ev.target);
+        if (!setter) continue;
+        if (ev.rampMs && ev.rampMs > 0) setter.ramp(ev.value, ev.rampMs / 1000, ev.time);
+        else setter.set(ev.value);
       }
-    },
-    RENDER_SECONDS,
-    2,
-    SAMPLE_RATE,
-  );
-  return performance.now() - t0;
+    }
+    // Let the nested IR render(s) resolve so the convolver has its buffer.
+    await sleep(250);
+    const t0 = performance.now();
+    await context.render();
+    return performance.now() - t0;
+  } finally {
+    Tone.setContext(original);
+  }
 }
 
 function median(xs: number[]): number {
@@ -153,15 +170,18 @@ function median(xs: number[]): number {
   return s.length % 2 ? hi : (lo + hi) / 2;
 }
 
+const REPEATS = 3;
+
 async function fullGraph(label: string, ro: RenderOpts = {}): Promise<number> {
+  // Same 6 workloads under every config; repeat each to damp measurement
+  // noise, then take the median of all render times. Since every config sees
+  // the identical seed set, the medians are directly comparable.
   const times: number[] = [];
-  for (const seed of SEEDS) times.push(await renderFull(seed, ro));
+  for (let r = 0; r < REPEATS; r++) {
+    for (const seed of SEEDS) times.push(await renderFull(seed, ro));
+  }
   const med = median(times);
-  console.log(
-    `  ${label.padEnd(28)} median ${med.toFixed(1)} ms  (per-seed: ${times
-      .map((t) => t.toFixed(0))
-      .join(', ')})`,
-  );
+  console.log(`  ${label.padEnd(26)} median ${med.toFixed(1)} ms  (n=${times.length})`);
   return med;
 }
 
@@ -224,17 +244,57 @@ async function main(): Promise<void> {
   console.log(`  -> decay3 vs 7:    ${(stereo3 / stereo7).toFixed(2)}× of decay7`);
   console.log(`  -> mono+decay3:    ${(mono3 / stereo7).toFixed(2)}× of current`);
 
-  console.log('\n=== (A) Full-graph render time ===');
-  console.log('  (Phase-1 caps baked in; reverb IR is async so the convolver may');
-  console.log('   render silent here — trust part (B) for the reverb A/B, not these)');
-  const capped = await fullGraph('Phase 1 (stereo reverb)');
-  const cappedRainOff = await fullGraph('  + rain OFF (Task 2)', { rainOff: true });
-  console.log(`  -> rain-off saving: ${(100 * (1 - cappedRainOff / capped)).toFixed(1)}%`);
+  console.log('\n=== (A) Full-graph render time — reverb IR loaded (definitive A/B) ===');
+  // Warm up the JIT / allocator so the first real config isn't penalised.
+  await renderFull(SEEDS[0] ?? 42n);
+  // Explicit old-sound baseline (mono/decay-3/bed are the chain defaults now).
+  const OFF: LofiChainOptions = { monoReverb: false, reverbDecay: 7, monoBed: false };
+  const base = await fullGraph('OFF: stereo, decay 7', { lofi: OFF });
+  const pct = (t: number): string => {
+    const d = 100 * (1 - t / base);
+    return `${d >= 0 ? '−' : '+'}${Math.abs(d).toFixed(1)}% vs OFF`;
+  };
+  const monoOnly = await fullGraph('monoverb', { lofi: { monoReverb: true } });
+  const decayOnly = await fullGraph('reverbdecay=3', { lofi: { reverbDecay: 3 } });
+  const bedOnly = await fullGraph('monobed', { lofi: { monoBed: true } });
+  const allOn = await fullGraph('ALL: mono+decay3+bed', {
+    lofi: { monoReverb: true, reverbDecay: 3, monoBed: true },
+  });
+  console.log('  ----');
+  console.log(`  monoverb           ${pct(monoOnly)}`);
+  console.log(`  reverbdecay=3      ${pct(decayOnly)}`);
+  console.log(`  monobed            ${pct(bedOnly)}`);
+  console.log(`  ALL three          ${pct(allOn)}`);
 
-  console.log('\n=== (A2) Phase-2 flags — exercises mono-reverb code path ===');
-  await fullGraph('mono reverb (Task 3)', { lofi: { monoReverb: true } });
-  await fullGraph('mono reverb + decay 3', { lofi: { monoReverb: true, reverbDecay: 3 } });
-  await fullGraph('mono bed (Task 5)', { lofi: { monoBed: true } });
+  console.log('\n=== (D) Cost composition — where the render time actually goes ===');
+  console.log('  (splits note-driven synthesis vs the always-on "floor")');
+  const withNotes = base; // full graph, notes on, stereo/decay7 = (A) baseline
+  const floor = await fullGraph('always-on floor (no notes)', { noEvents: true });
+  // Reverb ~removed: tiny mono IR (0.05s) ≈ negligible convolution.
+  const floorNoVerb = await fullGraph('floor − reverb', {
+    noEvents: true,
+    lofi: { monoReverb: true, reverbDecay: 0.05 },
+  });
+  const notesOnly = withNotes - floor;
+  console.log('  ----');
+  console.log(`  full graph (notes on)   ${withNotes.toFixed(0)} ms`);
+  console.log(
+    `  always-on floor         ${floor.toFixed(0)} ms  (${(100 * (floor / withNotes)).toFixed(0)}% of full)`,
+  );
+  console.log(
+    `  note-driven synthesis   ${notesOnly.toFixed(0)} ms  (${(100 * (notesOnly / withNotes)).toFixed(0)}% of full)`,
+  );
+  console.log(
+    `  reverb's share of floor ${(floor - floorNoVerb).toFixed(0)} ms  (${(100 * (1 - floorNoVerb / floor)).toFixed(0)}% of floor)`,
+  );
+
+  console.log('\n=== (E) Sample-rate lever — scales the WHOLE graph (notes + floor) ===');
+  const sr44 = await fullGraph('44.1 kHz (current)', { sampleRate: 44100 });
+  const sr32 = await fullGraph('32 kHz', { sampleRate: 32000 });
+  const sr22 = await fullGraph('22.05 kHz', { sampleRate: 22050 });
+  console.log('  ----');
+  console.log(`  32 kHz     ${(100 * (1 - sr32 / sr44)).toFixed(1)}% vs 44.1`);
+  console.log(`  22.05 kHz  ${(100 * (1 - sr22 / sr44)).toFixed(1)}% vs 44.1`);
 }
 
 main().then(
