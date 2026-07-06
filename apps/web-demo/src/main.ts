@@ -30,6 +30,7 @@ const THEMES: ReadonlyArray<{
   // id stays 'sky' (CSS class + saved prefs); display name is 'tide'.
   { id: 'sky', label: 'tide', hero: 'beacon' },
   { id: 'dusk', label: 'dusk', hero: 'moon' },
+  { id: 'brute', label: 'brute', hero: 'monolith' },
 ];
 const THEME_BY_ID = new Map(THEMES.map((t) => [t.id, t]));
 const THEME_IDS = new Set(THEMES.map((t) => t.id));
@@ -53,6 +54,14 @@ function applyTheme(rawId: string, announce = false): void {
   document.querySelectorAll<HTMLButtonElement>('.theme-swatch').forEach((b) => {
     b.setAttribute('aria-pressed', String(b.dataset.theme === id));
   });
+
+  // Sync the PWA/mobile browser chrome tint to this theme's --bg. Reading
+  // the computed value keeps CSS the single source of truth — no palette
+  // duplication in JS.
+  const bg = getComputedStyle(root).getPropertyValue('--bg').trim();
+  if (bg) {
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', bg);
+  }
 
   // Morph the metaphor: title + the idle "tap the <hero>" prompt. Only
   // rewrite the hint while idle so it never clobbers "listening…"/"paused".
@@ -442,7 +451,10 @@ function readLofiFlags(): LofiChainOptions {
   };
   const num = (key: string, storeKey: string): number | undefined => {
     const raw = qs.get(key);
-    if (raw !== null) {
+    // Reject the bare `?flag=` form: Number('') === 0, and 0 is a
+    // catastrophic value for knobs like keyscrushdrive — it must not be
+    // accepted (let alone persisted) from a trailing-`=` typo.
+    if (raw !== null && raw !== '') {
       const n = Number(raw);
       if (Number.isFinite(n)) {
         localStorage.setItem(storeKey, String(n));
@@ -450,12 +462,22 @@ function readLofiFlags(): LofiChainOptions {
       }
     }
     const stored = localStorage.getItem(storeKey);
-    return stored !== null ? Number(stored) : undefined;
+    if (stored === null) return undefined;
+    const n = Number(stored);
+    // Guard externally-corrupted storage — NaN would sail through `??`
+    // defaults in the chain and poison Gain params.
+    return Number.isFinite(n) ? n : undefined;
   };
   return {
     monoReverb: bool('monoverb', 'loam.flag.monoverb'),
     reverbDecay: num('reverbdecay', 'loam.flag.reverbdecay'),
     monoBed: bool('monobed', 'loam.flag.monobed'),
+    // Aesthetic sampler treatment on keys (docs/sampler-character.md) —
+    // default off. rate = integer decimation factor (4 ⇒ 8 kHz @ 32 kHz).
+    keysCrush: bool('keyscrush', 'loam.flag.keyscrush'),
+    keysCrushRate: num('keyscrushrate', 'loam.flag.keyscrushrate'),
+    keysCrushBits: num('keyscrushbits', 'loam.flag.keyscrushbits'),
+    keysCrushDrive: num('keyscrushdrive', 'loam.flag.keyscrushdrive'),
   };
 }
 
