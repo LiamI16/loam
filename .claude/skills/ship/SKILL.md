@@ -17,9 +17,17 @@ The complete landing ritual for Loam. Trunk-only: everything goes to
    ```
    Fix any failure before continuing. Always `pnpm`, never `npm`.
 
-2. **Stage selectively.** Check `git status` first — the user often has
-   simultaneous unrelated WIP (doc edits, other agents' changes). Stage
-   only files belonging to this change; list anything you left out.
+2. **Stage selectively — at hunk level, not just file level.** Check
+   `git status` first — the user often has simultaneous unrelated WIP
+   (doc edits, other agents' changes). Stage only files belonging to
+   this change, and before committing, read `git diff --cached` for any
+   file you also share with another workstream: a whole-file `git add`
+   sweeps in foreign uncommitted hunks (this broke CI once: another
+   agent's flag plumbing referenced types that only existed in their
+   uncommitted code, masked locally by a stale dist). If a staged file
+   contains hunks that aren't yours, unstage and re-stage your hunks
+   via a targeted edit or `git add -p`-equivalent. List anything you
+   left out.
 
 3. **Commit to `main`** with a conventional message
    (`feat(scope): …` / `perf(…)` / `docs(…)`). If the change shifts the
