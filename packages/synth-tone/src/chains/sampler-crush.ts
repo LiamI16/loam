@@ -79,6 +79,17 @@ export interface SamplerCrushConfig {
   drive: number;
 }
 
+/** Turn the processor source into something `audioWorklet.addModule` can
+ * load. Browser default: a Blob URL. Overridable because Node offline
+ * harnesses (node-web-audio-api) can't fetch `blob:` URLs but accept file
+ * paths — see scripts/offline-harness.ts. */
+let moduleUrlProvider = async (src: string): Promise<string> =>
+  URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
+
+export function setSamplerCrushModuleUrlProvider(fn: typeof moduleUrlProvider): void {
+  moduleUrlProvider = fn;
+}
+
 /** One module load per context. Matters for two reasons: chain rebuilds
  * (reseed) must not re-register the processor on the same context (Chrome
  * throws NotSupportedError on duplicate `registerProcessor`), and the blob
@@ -88,11 +99,25 @@ const moduleLoads = new WeakMap<BaseAudioContext, Promise<void>>();
 function loadModule(raw: BaseAudioContext): Promise<void> {
   let load = moduleLoads.get(raw);
   if (!load) {
-    const url = URL.createObjectURL(new Blob([PROCESSOR_SRC], { type: 'application/javascript' }));
-    load = raw.audioWorklet.addModule(url).finally(() => URL.revokeObjectURL(url));
+    load = (async () => {
+      const url = await moduleUrlProvider(PROCESSOR_SRC);
+      try {
+        await raw.audioWorklet.addModule(url);
+      } finally {
+        if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+      }
+    })();
     moduleLoads.set(raw, load);
   }
   return load;
+}
+
+/** In-flight installs, so offline renders can await the async worklet splice
+ * instead of racing it (a render that starts first measures the bypass). */
+const pendingInstalls = new Set<Promise<void>>();
+
+export function samplerCrushReady(): Promise<void> {
+  return Promise.allSettled([...pendingInstalls]).then(() => undefined);
 }
 
 /**
@@ -112,26 +137,31 @@ function loadModule(raw: BaseAudioContext): Promise<void> {
  * offline harness's polyfill, s-a-c-managed contexts) lands in the catch
  * and stays bypassed.
  */
-export async function installSamplerCrush(
+export function installSamplerCrush(
   input: Tone.Gain,
   output: Tone.Gain,
   cfg: SamplerCrushConfig,
 ): Promise<void> {
-  try {
-    const raw = Tone.getContext().rawContext as BaseAudioContext;
-    if (typeof AudioWorkletNode === 'undefined' || !raw.audioWorklet) {
-      throw new Error('AudioWorklet not supported in this environment');
+  const install = (async () => {
+    try {
+      const raw = Tone.getContext().rawContext as BaseAudioContext;
+      if (typeof AudioWorkletNode === 'undefined' || !raw.audioWorklet) {
+        throw new Error('AudioWorklet not supported in this environment');
+      }
+      await loadModule(raw);
+      const node = new AudioWorkletNode(raw, 'sampler-crush', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        processorOptions: cfg,
+      });
+      input.disconnect(output);
+      Tone.connect(input, node);
+      Tone.connect(node, output);
+    } catch (err) {
+      console.warn('sampler-crush worklet unavailable — keys crush bypassed', err);
     }
-    await loadModule(raw);
-    const node = new AudioWorkletNode(raw, 'sampler-crush', {
-      numberOfInputs: 1,
-      numberOfOutputs: 1,
-      processorOptions: cfg,
-    });
-    input.disconnect(output);
-    Tone.connect(input, node);
-    Tone.connect(node, output);
-  } catch (err) {
-    console.warn('sampler-crush worklet unavailable — keys crush bypassed', err);
-  }
+  })();
+  pendingInstalls.add(install);
+  install.then(() => pendingInstalls.delete(install));
+  return install;
 }

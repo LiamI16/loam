@@ -8,13 +8,30 @@
  * node-web-audio-api polyfill). Dev-only; not shipped.
  */
 
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { EmberEngine, type EngineEvent, Seed } from '@loam/core';
 import * as Tone from 'tone';
 import { buildLofiChain, type LofiChainOptions } from '../src/chains/lofi.js';
+import {
+  samplerCrushReady,
+  setSamplerCrushModuleUrlProvider,
+} from '../src/chains/sampler-crush.js';
 import type { ChannelRegistration, ParamSetter } from '../src/types.js';
 
 /** Production default (docs/audio-cpu-plan.md). */
 export const DEFAULT_SAMPLE_RATE = 32000;
+
+// node-web-audio-api (≥2.0) runs AudioWorklets in offline renders, but its
+// addModule can't fetch blob: URLs — hand the processor source over as a
+// real temp file instead. This closes the sim gap: offline renders now
+// exercise the REAL sampler-crush worklet in the REAL chain topology.
+setSamplerCrushModuleUrlProvider(async (src) => {
+  const path = join(mkdtempSync(join(tmpdir(), 'loam-worklet-')), 'sampler-crush.js');
+  writeFileSync(path, src);
+  return path;
+});
 
 export function engineEvents(seed: bigint, seconds: number): EngineEvent[] {
   const engine = new EmberEngine(Seed.from(seed), { bpm: 74 });
@@ -62,7 +79,14 @@ export async function renderChain(cfg: RenderConfig = {}): Promise<Tone.ToneAudi
   const seed = cfg.seed ?? 42n;
   const seconds = cfg.seconds ?? 24;
   const events = engineEvents(seed, seconds);
-  const context = new Tone.OfflineContext(2, seconds, cfg.sampleRate ?? DEFAULT_SAMPLE_RATE);
+  const sampleRate = cfg.sampleRate ?? DEFAULT_SAMPLE_RATE;
+  // Wrap the NATIVE (polyfilled) OfflineAudioContext rather than letting
+  // Tone build one via standardized-audio-context — mirrors production
+  // (which wraps a native AudioContext) and, critically, gives
+  // `rawContext.audioWorklet` so the sampler-crush worklet runs offline.
+  const context = new Tone.OfflineContext(
+    new OfflineAudioContext(2, Math.ceil(seconds * sampleRate), sampleRate),
+  );
   const original = Tone.getContext();
   Tone.setContext(context);
   try {
@@ -84,9 +108,54 @@ export async function renderChain(cfg: RenderConfig = {}): Promise<Tone.ToneAudi
     for (const [target, value] of Object.entries(cfg.params ?? {})) {
       adapter.params.get(target)?.set(value);
     }
+    // Don't race the async worklet splice — a render that starts before the
+    // install completes silently measures the pass-through instead.
+    await samplerCrushReady();
     await sleep(250); // let the nested reverb-IR render resolve
     return await context.render();
   } finally {
     Tone.setContext(original);
   }
+}
+
+/** 16-bit PCM WAV writer (interleaved, excerpt). Shared by the analysis
+ * scripts so rendered comparisons are listenable artifacts, not just
+ * numbers. */
+export function writeWav(
+  path: string,
+  channels: Float32Array[],
+  sampleRate: number,
+  startSeconds = 0,
+  seconds = Number.POSITIVE_INFINITY,
+): void {
+  const start = Math.floor(startSeconds * sampleRate);
+  const frames = Math.max(
+    0,
+    Math.min(Math.floor(seconds * sampleRate), (channels[0]?.length ?? 0) - start),
+  );
+  const nCh = channels.length;
+  const dataBytes = frames * nCh * 2;
+  const buf = Buffer.alloc(44 + dataBytes);
+  buf.write('RIFF', 0);
+  buf.writeUInt32LE(36 + dataBytes, 4);
+  buf.write('WAVE', 8);
+  buf.write('fmt ', 12);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20); // PCM
+  buf.writeUInt16LE(nCh, 22);
+  buf.writeUInt32LE(sampleRate, 24);
+  buf.writeUInt32LE(sampleRate * nCh * 2, 28);
+  buf.writeUInt16LE(nCh * 2, 32);
+  buf.writeUInt16LE(16, 34);
+  buf.write('data', 36);
+  buf.writeUInt32LE(dataBytes, 40);
+  let off = 44;
+  for (let i = 0; i < frames; i++) {
+    for (const ch of channels) {
+      const v = Math.max(-1, Math.min(1, ch[start + i] ?? 0));
+      buf.writeInt16LE(Math.round(v * 32767), off);
+      off += 2;
+    }
+  }
+  writeFileSync(path, buf);
 }

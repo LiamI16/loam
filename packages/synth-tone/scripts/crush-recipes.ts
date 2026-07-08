@@ -30,9 +30,9 @@
  * Dev-only; not shipped.
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { Channels } from '@loam/core';
-import { DEFAULT_SAMPLE_RATE, renderChain } from './offline-harness.js';
+import { DEFAULT_SAMPLE_RATE, renderChain, writeWav as writeWavShared } from './offline-harness.js';
 import { monoMix, peakProminenceDb, rmsDb, spectralFlatness, welchPsd } from './spectrum-util.js';
 
 const SEED = 42n;
@@ -233,35 +233,10 @@ function addEcho(channels: Float32Array[], sr: number): Float32Array[] {
   });
 }
 
-/** 16-bit PCM WAV writer (interleaved stereo excerpt). */
+/** Excerpted WAV write with this script's window (shared writer lives in
+ * offline-harness.ts). */
 function writeWav(path: string, channels: Float32Array[], sampleRate: number): void {
-  const start = WAV_START_S * sampleRate;
-  const frames = Math.min(WAV_SECONDS * sampleRate, (channels[0]?.length ?? 0) - start);
-  const nCh = channels.length;
-  const dataBytes = frames * nCh * 2;
-  const buf = Buffer.alloc(44 + dataBytes);
-  buf.write('RIFF', 0);
-  buf.writeUInt32LE(36 + dataBytes, 4);
-  buf.write('WAVE', 8);
-  buf.write('fmt ', 12);
-  buf.writeUInt32LE(16, 16);
-  buf.writeUInt16LE(1, 20); // PCM
-  buf.writeUInt16LE(nCh, 22);
-  buf.writeUInt32LE(sampleRate, 24);
-  buf.writeUInt32LE(sampleRate * nCh * 2, 28);
-  buf.writeUInt16LE(nCh * 2, 32);
-  buf.writeUInt16LE(16, 34);
-  buf.write('data', 36);
-  buf.writeUInt32LE(dataBytes, 40);
-  let off = 44;
-  for (let i = 0; i < frames; i++) {
-    for (const ch of channels) {
-      const v = Math.max(-1, Math.min(1, ch[start + i] ?? 0));
-      buf.writeInt16LE(Math.round(v * 32767), off);
-      off += 2;
-    }
-  }
-  writeFileSync(path, buf);
+  writeWavShared(path, channels, sampleRate, WAV_START_S, WAV_SECONDS);
 }
 
 async function main(): Promise<void> {

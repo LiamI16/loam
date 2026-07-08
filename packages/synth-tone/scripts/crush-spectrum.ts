@@ -21,13 +21,15 @@
  * Dev-only; not shipped.
  */
 
+import { mkdirSync } from 'node:fs';
 import type { LofiChainOptions } from '../src/chains/lofi.js';
-import { DEFAULT_SAMPLE_RATE, renderChain } from './offline-harness.js';
+import { DEFAULT_SAMPLE_RATE, renderChain, writeWav } from './offline-harness.js';
 import { bandDb, monoMix, rmsDb, welchPsd } from './spectrum-util.js';
 
 const SEED = 42n;
 const RENDER_SECONDS = 24;
 const FFT_SIZE = 8192;
+const WAV_DIR = '/tmp/loam-crush/live';
 
 // Band edges in Hz — split around the evoFilter cutoff (1800) so "did the LP
 // eat the crunch" is directly readable from the table.
@@ -45,17 +47,20 @@ const BANDS: Array<[number, number]> = [
 
 interface Variant {
   label: string;
+  file: string;
   lofi: LofiChainOptions;
 }
 
+// The offline harness runs the REAL sampler-crush worklet (file-path module
+// provider — see offline-harness.ts), so these variants measure the true
+// production topology: crush after evoFilter, before the reverb/echo taps.
 const VARIANTS: Variant[] = [
-  { label: 'OFF (baseline)', lofi: {} },
-  { label: 'OFF (repeat = noise floor)', lofi: {} },
-  { label: 'bits 12, drive 4 (default)', lofi: { keysCrush: true } },
-  { label: 'bits 8,  drive 4', lofi: { keysCrush: true, keysCrushBits: 8 } },
-  { label: 'bits 4,  drive 4', lofi: { keysCrush: true, keysCrushBits: 4 } },
-  { label: 'bits 12, drive 1', lofi: { keysCrush: true, keysCrushDrive: 1 } },
-  { label: 'bits 12, drive 8', lofi: { keysCrush: true, keysCrushDrive: 8 } },
+  { label: 'OFF (baseline)', file: 'off', lofi: {} },
+  { label: 'OFF (repeat = noise floor)', file: 'off-repeat', lofi: {} },
+  { label: 'crush defaults (rate4 q12)', file: 'crush-default', lofi: { keysCrush: true } },
+  { label: 'crush rate 3', file: 'crush-rate3', lofi: { keysCrush: true, keysCrushRate: 3 } },
+  { label: 'crush rate 8', file: 'crush-rate8', lofi: { keysCrush: true, keysCrushRate: 8 } },
+  { label: 'crush bits 8', file: 'crush-bits8', lofi: { keysCrush: true, keysCrushBits: 8 } },
 ];
 
 async function main(): Promise<void> {
@@ -64,11 +69,18 @@ async function main(): Promise<void> {
   );
   console.log(`Bands split at the evoFilter cutoff (1800 Hz). Deltas are dB vs OFF baseline.\n`);
 
+  mkdirSync(WAV_DIR, { recursive: true });
   const results: Array<{ label: string; rms: number; bands: number[] }> = [];
   for (const v of VARIANTS) {
-    const samples = monoMix(
-      await renderChain({ seed: SEED, seconds: RENDER_SECONDS, lofi: v.lofi }),
+    const buffer = await renderChain({ seed: SEED, seconds: RENDER_SECONDS, lofi: v.lofi });
+    writeWav(
+      `${WAV_DIR}/${v.file}.wav`,
+      [buffer.getChannelData(0), buffer.getChannelData(1)],
+      DEFAULT_SAMPLE_RATE,
+      2,
+      12,
     );
+    const samples = monoMix(buffer);
     const psd = welchPsd(samples, FFT_SIZE);
     results.push({
       label: v.label,

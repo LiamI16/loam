@@ -156,17 +156,30 @@ a chord phenomenon. But fix-candidate ear tests then stopped converging
 derived from, which physics rules out), so tuning is paused before it turns
 into ear-fatigue roulette.
 
-**Resume here:** the untested structural gap is that all offline sims crush
-*after* the room, while the live chain crushes *before* the reverb/echo
-sends — reverberated/echoed image tones exist only live, and no current
-tool can A/B the real chain offline (node-web-audio-api lacks AudioWorklet).
-First step on resume: build a true live-chain capture (in-browser
-MediaRecorder/OfflineAudioContext render of the actual graph, or offline
-worklet support), THEN re-run the chord-buzz comparison on real output.
-Leading fix candidate if the diagnosis holds: **crush the melody path only**
-(pre-chorus split; chords stay clean) — 2026-07-08 candidate `24` was
-buzz-free and preserved the liked character; implement + verify live when
-resumed.
+**Resume here — sim gap CLOSED (2026-07-08):** the offline harness now runs
+the REAL sampler-crush worklet in the REAL chain topology. Two pieces made
+it work: node-web-audio-api ≥2.0 supports AudioWorklet but only loads
+modules from file paths (not blob URLs) → `sampler-crush.ts` exposes a
+module-URL provider hook that `offline-harness.ts` overrides with a
+temp-file writer; and the harness wraps the NATIVE polyfilled
+`OfflineAudioContext` in `Tone.OfflineContext` (standardized-audio-context's
+offline facade has no `.audioWorklet`) — the same native-wrapping pattern
+production uses. Renders `await samplerCrushReady()` so they can't race the
+async worklet splice. Verified: `crush-spectrum.ts` now shows significant
+true-chain deltas (rate 8: −5.2 dB @1.2–1.8k, +3.5 dB @3–6k) and writes
+listenable true-chain WAVs to `/tmp/loam-crush/live/`.
+
+Remaining on resume: re-run the chord-buzz comparison on true-chain output,
+then evaluate the leading fix candidate — **crush the melody path only**
+(pre-chorus split; chords stay clean); 2026-07-08 candidate `24` was
+buzz-free and preserved the liked character.
+
+**⚠️ Ear-test hygiene (root cause of the 2026-07-08 "going in circles"):**
+`loam.flag.*` localStorage is **per-origin** — `localhost:5173` accumulates
+flags from tuning sessions while the deployed site stays clean. A local page
+"without flags" can still have `keyscrush=1` (+ stale bits/rate) silently
+active from days earlier. Before ANY local-vs-deployed or local-vs-WAV
+comparison, pass every knob explicitly once (or clear `loam.flag.*`).
 
 ## Superseded: `WaveShaper` quantizer (kept for the decision record)
 
