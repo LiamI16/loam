@@ -174,12 +174,24 @@ then evaluate the leading fix candidate — **crush the melody path only**
 (pre-chorus split; chords stay clean); 2026-07-08 candidate `24` was
 buzz-free and preserved the liked character.
 
-**⚠️ Ear-test hygiene (root cause of the 2026-07-08 "going in circles"):**
-`loam.flag.*` localStorage is **per-origin** — `localhost:5173` accumulates
-flags from tuning sessions while the deployed site stays clean. A local page
-"without flags" can still have `keyscrush=1` (+ stale bits/rate) silently
-active from days earlier. Before ANY local-vs-deployed or local-vs-WAV
-comparison, pass every knob explicitly once (or clear `loam.flag.*`).
+**⚠️ Ear-test hygiene (ROOT CAUSE of the 2026-07-08 "going in circles",
+resolved 2026-07-08):** `loam.flag.*` localStorage is **per-origin** —
+`localhost:5173` accumulates flags from tuning sessions while the deployed
+site stays clean. The actual local contamination, inventoried via console:
+**`samplerate=20050`** (a typo'd 22050 from CPU testing, inside the sanity
+bounds so nothing caught it — at ~10 kHz Nyquist the FM Rhodes' sidebands
+fold back as inharmonic buzz, worst on sustained chords: THE "chord buzz"),
+plus `keyscrush=1` and `tape=1` stacked on top. `?keyscrush=0` not fixing
+the buzz was the tell that the crush wasn't the cause. Consequences:
+
+- **Every local ear impression made while the typo was live is void** —
+  including the crush approval and the buzz reports that paused this
+  workstream. On resume, first re-hear `?keyscrush=1` vs `=0` on a clean
+  32 kHz context.
+- The web demo now logs active flag overrides to the console at boot
+  (`[loam] flag overrides active…`) so silent contamination is visible.
+- Before ANY local-vs-deployed or local-vs-WAV comparison: check that boot
+  line, and pass every knob explicitly once (or clear `loam.flag.*`).
 
 ## Superseded: `WaveShaper` quantizer (kept for the decision record)
 

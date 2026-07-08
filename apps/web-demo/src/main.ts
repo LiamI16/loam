@@ -468,6 +468,19 @@ function readLofiFlags(): LofiChainOptions {
     // defaults in the chain and poison Gain params.
     return Number.isFinite(n) ? n : undefined;
   };
+  const oversample = (key: string, storeKey: string): '2x' | '4x' | 'none' | undefined => {
+    const isValid = (v: string): v is '2x' | '4x' | 'none' =>
+      v === '2x' || v === '4x' || v === 'none';
+    const raw = qs.get(key);
+    if (raw !== null) {
+      if (isValid(raw)) {
+        localStorage.setItem(storeKey, raw);
+        return raw;
+      }
+    }
+    const stored = localStorage.getItem(storeKey);
+    return stored !== null && isValid(stored) ? stored : undefined;
+  };
   return {
     monoReverb: bool('monoverb', 'loam.flag.monoverb'),
     reverbDecay: num('reverbdecay', 'loam.flag.reverbdecay'),
@@ -478,6 +491,13 @@ function readLofiFlags(): LofiChainOptions {
     keysCrushRate: num('keyscrushrate', 'loam.flag.keyscrushrate'),
     keysCrushBits: num('keyscrushbits', 'loam.flag.keyscrushbits'),
     keysCrushDrive: num('keyscrushdrive', 'loam.flag.keyscrushdrive'),
+    // Tape-texture stage (docs/tape-texture.md) — default off pre-bake.
+    // Oversample accepts 'none' | '2x' | '4x'; anything else falls back.
+    tape: bool('tape', 'loam.flag.tape'),
+    tapeDrive: num('tapedrive', 'loam.flag.tapedrive'),
+    tapeOversample: oversample('tapeoversample', 'loam.flag.tapeoversample'),
+    tapeHissDb: num('tapehissdb', 'loam.flag.tapehissdb'),
+    tapeWowDepth: num('tapewowdepth', 'loam.flag.tapewowdepth'),
   };
 }
 
@@ -505,9 +525,34 @@ function readSampleRateFlag(): number {
   return stored !== null ? Number(stored) : DEFAULT_SAMPLE_RATE;
 }
 
+// Boot-time visibility for persisted overrides. loam.flag.* localStorage is
+// per-origin and outlives tuning sessions; stale values have repeatedly
+// contaminated ear tests unnoticed (worst case: a typo'd samplerate=20050
+// buzzed the FM keys locally for days while the deployed site, with clean
+// storage, stayed crisp). One console line makes contamination visible.
+let flagsLogged = false;
+function logActiveFlags(lofi: LofiChainOptions, sampleRate: number): void {
+  if (flagsLogged) return;
+  flagsLogged = true;
+  const active: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(lofi)) {
+    if (v !== undefined) active[k] = v;
+  }
+  if (sampleRate !== DEFAULT_SAMPLE_RATE) active.samplerate = sampleRate;
+  if (Object.keys(active).length > 0) {
+    console.info(
+      '[loam] flag overrides active (clear via localStorage loam.flag.* or explicit URL params):',
+      active,
+    );
+  }
+}
+
 function buildAudio(seedValue: bigint): { adapter: ToneAudioAdapter; engine: EmberEngine } {
-  const a = new ToneAudioAdapter({ sampleRate: readSampleRateFlag() });
-  buildLofiChain(a, readLofiFlags());
+  const sampleRate = readSampleRateFlag();
+  const a = new ToneAudioAdapter({ sampleRate });
+  const lofiFlags = readLofiFlags();
+  logActiveFlags(lofiFlags, sampleRate);
+  buildLofiChain(a, lofiFlags);
 
   const e = buildEngine(seedValue);
   a.setEngine(e);
