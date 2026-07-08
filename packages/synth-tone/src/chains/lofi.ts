@@ -1,6 +1,7 @@
 import { Channels } from '@loam/core';
 import * as Tone from 'tone';
 import type { ToneAudioAdapter } from '../adapter.js';
+import { installSamplerCrush } from './sampler-crush.js';
 
 /**
  * Builds the v1 lo-fi signal chain. Registers channels and parameter
@@ -37,10 +38,31 @@ export interface LofiChainOptions {
   /** Drop the always-on brown-bed StereoWidener (slightly narrower bed) for a
    * small always-on saving. Task 5. Default true; pass false to re-widen. */
   monoBed?: boolean;
+  /** Vintage-sampler treatment on the keys (chord + melody): linear-hold
+   * sample-rate reduction + 12-bit dithered quantization via a minimal
+   * AudioWorklet. AESTHETIC, default off. Recipe locked by offline A/B —
+   * see docs/sampler-character.md. */
+  keysCrush?: boolean;
+  /** Integer decimation factor for `keysCrush` (effective rate = context
+   * rate / factor; 4 ⇒ 8 kHz at the 32 kHz default). Clamped to 1–8.
+   * Default 4. Ear-tuning knob. */
+  keysCrushRate?: number;
+  /** Quantization bit depth for `keysCrush` (1–16, clamped). Default 12. */
+  keysCrushBits?: number;
+  /** Drive into the quantizer (linear gain, inverted after) — staging so the
+   * bit depth is honest for a below-full-scale signal. Must be a positive
+   * finite number; anything else falls back to `KEYS_CRUSH_DRIVE_DEFAULT`. */
+  keysCrushDrive?: number;
 }
 
 const REVERB_DECAY_DEFAULT = 3;
 const REVERB_PREDELAY = 0.02;
+/** Quantizer staging (see `keysCrushDrive`): the keys sit well below 0 dBFS,
+ * so without a boost the quantizer only sees the noise-floor regime.
+ * Ear-test history: docs/sampler-character.md. */
+const KEYS_CRUSH_DRIVE_DEFAULT = 4;
+const KEYS_CRUSH_BITS_DEFAULT = 12;
+const KEYS_CRUSH_RATE_DEFAULT = 4;
 
 export function buildLofiChain(adapter: ToneAudioAdapter, opts: LofiChainOptions = {}): void {
   // ── master & shared reverb return ───────────────────────────────
@@ -94,8 +116,37 @@ export function buildLofiChain(adapter: ToneAudioAdapter, opts: LofiChainOptions
   const chordEchoSend = new Tone.Gain(0.2);
   chordEchoSend.connect(chordEcho);
   chorus.connect(evoFilter);
-  evoFilter.connect(keysPan);
-  evoFilter.connect(chordEchoSend);
+  // Vintage-sampler keys treatment (design + iteration history:
+  // docs/sampler-character.md). Code-local constraints: it must sit
+  // *upstream* of every keys tap (dry, reverb send, chord-echo send) so the
+  // sends carry the crushed signal, but *downstream* of evoFilter — the
+  // character is imaging around the reduced rate (~8 kHz at defaults), which
+  // an LP 1800 before the taps would erase (the failure mode of the original
+  // pre-evoFilter quantizer). Knob values are validated here — a malformed
+  // flag must fall back to defaults, never break or silence the keys. The
+  // worklet loads async; crushIn→crushOut passes audio through until then
+  // (and permanently if worklets are unavailable).
+  if (opts.keysCrush) {
+    const rawDrive = opts.keysCrushDrive ?? KEYS_CRUSH_DRIVE_DEFAULT;
+    const rawBits = opts.keysCrushBits ?? KEYS_CRUSH_BITS_DEFAULT;
+    const rawRate = opts.keysCrushRate ?? KEYS_CRUSH_RATE_DEFAULT;
+    const crushIn = new Tone.Gain(1);
+    const crushOut = new Tone.Gain(1);
+    evoFilter.connect(crushIn);
+    crushIn.connect(crushOut);
+    crushOut.connect(keysPan);
+    crushOut.connect(chordEchoSend);
+    void installSamplerCrush(crushIn, crushOut, {
+      factor: Number.isFinite(rawRate)
+        ? Math.min(Math.max(Math.round(rawRate), 1), 8)
+        : KEYS_CRUSH_RATE_DEFAULT,
+      bits: Number.isFinite(rawBits) ? Math.min(Math.max(rawBits, 1), 16) : KEYS_CRUSH_BITS_DEFAULT,
+      drive: Number.isFinite(rawDrive) && rawDrive > 0 ? rawDrive : KEYS_CRUSH_DRIVE_DEFAULT,
+    });
+  } else {
+    evoFilter.connect(keysPan);
+    evoFilter.connect(chordEchoSend);
+  }
   keysPan.connect(warmth);
   keysPan.connect(keysSend);
   keysSend.connect(reverb);
