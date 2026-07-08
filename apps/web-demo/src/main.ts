@@ -468,19 +468,6 @@ function readLofiFlags(): LofiChainOptions {
     // defaults in the chain and poison Gain params.
     return Number.isFinite(n) ? n : undefined;
   };
-  const oversample = (key: string, storeKey: string): '2x' | '4x' | 'none' | undefined => {
-    const isValid = (v: string): v is '2x' | '4x' | 'none' =>
-      v === '2x' || v === '4x' || v === 'none';
-    const raw = qs.get(key);
-    if (raw !== null) {
-      if (isValid(raw)) {
-        localStorage.setItem(storeKey, raw);
-        return raw;
-      }
-    }
-    const stored = localStorage.getItem(storeKey);
-    return stored !== null && isValid(stored) ? stored : undefined;
-  };
   return {
     monoReverb: bool('monoverb', 'loam.flag.monoverb'),
     reverbDecay: num('reverbdecay', 'loam.flag.reverbdecay'),
@@ -491,13 +478,9 @@ function readLofiFlags(): LofiChainOptions {
     keysCrushRate: num('keyscrushrate', 'loam.flag.keyscrushrate'),
     keysCrushBits: num('keyscrushbits', 'loam.flag.keyscrushbits'),
     keysCrushDrive: num('keyscrushdrive', 'loam.flag.keyscrushdrive'),
-    // Tape-texture stage (docs/tape-texture.md) — default off pre-bake.
-    // Oversample accepts 'none' | '2x' | '4x'; anything else falls back.
-    tape: bool('tape', 'loam.flag.tape'),
-    tapeDrive: num('tapedrive', 'loam.flag.tapedrive'),
-    tapeOversample: oversample('tapeoversample', 'loam.flag.tapeoversample'),
-    tapeHissDb: num('tapehissdb', 'loam.flag.tapehissdb'),
-    tapeWowDepth: num('tapewowdepth', 'loam.flag.tapewowdepth'),
+    // NB the tape-texture flags (docs/tape-texture.md) land with that
+    // workstream's lofi.ts changes — flag plumbing was accidentally swept
+    // into 3e4a401 and reverted; recover the hunk from that commit.
   };
 }
 
