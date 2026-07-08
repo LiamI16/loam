@@ -144,8 +144,29 @@ Production-integration findings on the way there:
   AudioWorklet); production-chain verification of the crush is browser-only.
   The recipe-level ground truth lives in `crush-recipes.ts` (pure JS).
 
-**Status: implemented + approved, default OFF.** Bake-as-default is the
-owner's call (see Rollout).
+**Status: ⏸ ON HOLD (owner decision 2026-07-08), default OFF.** Shipped
+behind the flag; no user-facing change while paused.
+
+Why paused: after in-app approval, careful listening found roughness/buzz on
+sustained chords. Numerically confirmed cause: FOH imaging on *sustained*
+material is tonal (chord-only error peakProm 7.5 dB / flatness 0.75 in
+3–11 k) while on melody it's noise-like grit (1.1 dB / 0.997) — the buzz is
+a chord phenomenon. But fix-candidate ear tests then stopped converging
+(a post-LP-smoothed variant reported buzzier than the unsmoothed one it was
+derived from, which physics rules out), so tuning is paused before it turns
+into ear-fatigue roulette.
+
+**Resume here:** the untested structural gap is that all offline sims crush
+*after* the room, while the live chain crushes *before* the reverb/echo
+sends — reverberated/echoed image tones exist only live, and no current
+tool can A/B the real chain offline (node-web-audio-api lacks AudioWorklet).
+First step on resume: build a true live-chain capture (in-browser
+MediaRecorder/OfflineAudioContext render of the actual graph, or offline
+worklet support), THEN re-run the chord-buzz comparison on real output.
+Leading fix candidate if the diagnosis holds: **crush the melody path only**
+(pre-chorus split; chords stay clean) — 2026-07-08 candidate `24` was
+buzz-free and preserved the liked character; implement + verify live when
+resumed.
 
 ## Superseded: `WaveShaper` quantizer (kept for the decision record)
 

@@ -417,6 +417,96 @@ async function main(): Promise<void> {
     );
   }
 
+  // Chord-buzz diagnosis + fix candidates (2026-07-08 ear report: "slight
+  // buzzing, probably from the chord bitcrushing"). Sustained chords make
+  // the FOH imaging STEADY (tonal buzz); short melody notes make it
+  // transient (grit). Confirm by comparing the recipe-19 error tonality on
+  // chord-only vs melody-only renders, then render three fix candidates
+  // in-mix (the approval lesson: judge in-mix, never solo).
+  {
+    const winner = compose(srrLin(4), quant(12, true));
+    const imgLo = 3000; // FOH /4 imaging band at 32 kHz: ~5-11 k, tails to 3 k
+    const imgHi = 11000;
+    const errOf = (chs: Float32Array[], proc: Process): Float32Array => {
+      const p = proc(
+        chs.map((ch) => Float32Array.from(ch)),
+        DEFAULT_SAMPLE_RATE,
+      );
+      const e = new Float32Array(chs[0]?.length ?? 0);
+      for (let i = 0; i < e.length; i++) {
+        const pm = (((p[0]?.[i] ?? 0) as number) + ((p[1]?.[i] ?? 0) as number)) / 2;
+        const cm = (((chs[0]?.[i] ?? 0) as number) + ((chs[1]?.[i] ?? 0) as number)) / 2;
+        e[i] = pm - cm;
+      }
+      return e;
+    };
+    const toChs = (b: Awaited<ReturnType<typeof renderChain>>): Float32Array[] => [
+      b.getChannelData(0),
+      b.getChannelData(1),
+    ];
+    const kOpts = { seed: SEED, seconds: RENDER_SECONDS, lofi: { reverbDecay: 0.05 } };
+    const chordChs = toChs(await renderChain({ ...kOpts, noteChannels: [Channels.RHODES_CHORD] }));
+    const melodyChs = toChs(
+      await renderChain({ ...kOpts, noteChannels: [Channels.RHODES_MELODY] }),
+    );
+    const restChs = toChs(
+      await renderChain({
+        ...kOpts,
+        noteChannels: [
+          Channels.BASS,
+          Channels.KICK,
+          Channels.SNARE,
+          Channels.HAT,
+          Channels.PAD,
+          Channels.BELL,
+        ],
+      }),
+    );
+    for (const [label, chs] of [
+      ['chord-only', chordChs],
+      ['melody-only', melodyChs],
+    ] as const) {
+      const psd = welchPsd(errOf(chs, winner), FFT_SIZE);
+      console.log(
+        `\nbuzz check — recipe-19 error on ${label}: ` +
+          `peakProm ${peakProminenceDb(psd, DEFAULT_SAMPLE_RATE, FFT_SIZE, imgLo, imgHi).toFixed(1)} dB, ` +
+          `flatness ${spectralFlatness(psd, DEFAULT_SAMPLE_RATE, FFT_SIZE, imgLo, imgHi).toFixed(3)} (${imgLo / 1000}-${imgHi / 1000} kHz)`,
+      );
+    }
+    const sum = (...parts: Float32Array[][]): Float32Array[] =>
+      [0, 1].map((c) => {
+        const out = new Float32Array(parts[0]?.[c]?.length ?? 0);
+        for (const part of parts) {
+          const ch = part[c];
+          for (let i = 0; i < out.length; i++) out[i] += ch?.[i] ?? 0;
+        }
+        return out;
+      });
+    const crush = (chs: Float32Array[], proc: Process): Float32Array[] =>
+      proc(
+        chs.map((ch) => Float32Array.from(ch)),
+        DEFAULT_SAMPLE_RATE,
+      );
+    // Candidates. NB 24 sums three renders (3× brown bed vs 2× elsewhere —
+    // slight bed boost, disclosed, fine for A/B of the crush character).
+    writeWav(
+      `${OUT_DIR}/23-mix-19-rate3.wav`,
+      sum(crush(clean, compose(srrLin(3), quant(12, true))), restChs),
+      DEFAULT_SAMPLE_RATE,
+    );
+    writeWav(
+      `${OUT_DIR}/24-mix-melody-only-crush.wav`,
+      sum(crush(melodyChs, winner), chordChs, restChs),
+      DEFAULT_SAMPLE_RATE,
+    );
+    writeWav(
+      `${OUT_DIR}/25-mix-19-postlp6k5.wav`,
+      sum(crush(clean, compose(srrLin(4), quant(12, true), lp(6500))), restChs),
+      DEFAULT_SAMPLE_RATE,
+    );
+    console.log('fix candidates written: 23 (rate 3), 24 (melody-only crush), 25 (post-LP 6.5k)');
+  }
+
   // Production-placement simulation: the real chain crushes BEFORE the
   // chord-echo send, so repeats are clean copies OF the crushed signal.
   // Rendering echo-free, crushing, then adding a JS echo tests whether the
