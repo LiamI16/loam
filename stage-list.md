@@ -165,8 +165,67 @@ whether it plays. This is the biggest "tech demo vs. music" tell.
 **Now unblocked:** required drums + bass + melody to be in their
 final form — all three are.
 
-**Files:** new `arrangement-controller.ts`, `ember.ts` wiring, every
-sub-scheduler reads the mute mask.
+**Cut the seam first (2026-07-09 arch review).** `ember.ts` has no
+shared per-scheduler lifecycle hook, so "every sub-scheduler reads the
+mask" = N hand-edited sites. Resolve one design question in
+`docs/arrangement.md` before coding: **suppress muted events at the
+composition point in `ember.ts`** (filter each scheduler's returned
+events by channel against the mask — one-file change, schedulers still
+advance internal state so phrases stay aligned; recommended, likely
+sufficient for "drums out for 8 bars") **vs. mask-aware schedulers**
+(only if smooth phrase-boundary handoffs require a scheduler to not
+start a phrase it can't finish). `EngineState` is the existing
+blackboard (`chordSchedule` already flows Chord→Bass) — add the phrase
+counter + active-mask there.
+
+**Files:** new `docs/arrangement.md` (design pass first),
+`arrangement-controller.ts`, `ember.ts` wiring.
+
+---
+
+### Pre-launch infra + process hardening (2026-07-09 dual review)
+
+From the Fable meta + architecture reviews. Terse by design — these
+are actions, not narratives. Do the cheap/high-leverage ones before or
+alongside the arrangement controller; they de-risk it and counter-melody.
+
+- **Dedup shared values** (arch §3/§6): export `DEFAULT_SAMPLE_RATE`
+  (32000, currently defined in both `main.ts` + `offline-harness.ts`)
+  and `RAIN_OFF_THRESHOLD_DB` from `@loam/synth-tone`; derive
+  `RAIN_SILENT_DB` from it. Own-rule violation; the samplerate dup
+  enabled the `samplerate=20050` ear-test-voiding bug. ~20 min.
+- **Allowlist-validate enum flags** (meta §3): `samplerate` (+ any
+  enum-shaped flag) against `{22050,32000,44100,48000}`, not a range —
+  closes the 20050 class. 5-line change in `main.ts`.
+- **Decompose `chains/lofi.ts`** (836-line god-module, arch §2): extract
+  `chains/tape.ts` (kills the 4 null-ref threading vars), then
+  `chains/beds.ts`, then `chains/reverb.ts` (free). Add `posFinite` /
+  `clampInt` / `toneParam` helpers same diff (collapses 5× hand-rolled
+  validation + ~8 param-reg blocks). Do before counter-melody / mix-bias
+  multiply the boilerplate. Verify via fingerprint/render diff.
+- **Reseed-transition smoke test** (both reviews): offline-render a seed
+  handoff, assert transition-window peak RMS bounded vs steady state.
+  Locks in the white-noise-blast fix; needs the worklet-capable harness
+  (exists). Adapter is 1-test underbelly vs core's 17.
+- **`listen-check` DSP branch** (meta §5): true-chain flag-off/on render
+  → band diff vs OFF-repeat floor → WAV pair to /tmp. Harness exists;
+  skill just needs the procedure. The "spectral-regression skill" =
+  listen-check's missing half, not a new skill.
+- **`/ear-check` preflight** (meta §5/§7): read boot flag-override log,
+  confirm context sample rate, clear/enumerate `loam.flag.*`, state one
+  question. The 20050 incident voided weeks of impressions; this is the
+  checklist that reads the existing boot-log sensor.
+- **Tape ON/OFF confirmation** (tape-texture.md open-q §2): one
+  level-matched ear A/B + aggregate spectral-difference render — does the
+  stage read as *more produced*, not merely harmless? Then **freeze
+  texture tuning** until the arrangement controller lands (keysCrush
+  stays parked; no new texture knobs).
+
+**Structural / post-launch:** probe-injection mode (`--probe sine:<hz>`)
+in `offline-harness.ts` (unblocks the abandoned wow + saturation-harmonic
+measurements); in-browser `OfflineAudioContext` capture page (closes the
+node-web-audio-api↔Chrome fidelity hedge); worktree-per-workstream for
+concurrent agents; doc-lifecycle procedure (separate discussion).
 
 ---
 

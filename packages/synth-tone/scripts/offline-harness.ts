@@ -18,10 +18,13 @@ import {
   samplerCrushReady,
   setSamplerCrushModuleUrlProvider,
 } from '../src/chains/sampler-crush.js';
+import { DEFAULT_SAMPLE_RATE } from '../src/constants.js';
 import type { ChannelRegistration, ParamSetter } from '../src/types.js';
 
-/** Production default (docs/audio-cpu-plan.md). */
-export const DEFAULT_SAMPLE_RATE = 32000;
+/** Production default (docs/audio-cpu-plan.md). Imported from the package's
+ * single source of truth, and re-exported so scripts can keep importing it
+ * from the harness. */
+export { DEFAULT_SAMPLE_RATE };
 
 // node-web-audio-api (≥2.0) runs AudioWorklets in offline renders, but its
 // addModule can't fetch blob: URLs — hand the processor source over as a

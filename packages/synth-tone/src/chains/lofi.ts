@@ -1,7 +1,11 @@
 import { Channels } from '@loam/core';
 import * as Tone from 'tone';
 import type { ToneAudioAdapter } from '../adapter.js';
+import { RAIN_OFF_THRESHOLD_DB } from '../constants.js';
+import { clampIntOr, clampOr, posFiniteOr } from './opt-validate.js';
+import { buildMonoReverb } from './reverb.js';
 import { installSamplerCrush } from './sampler-crush.js';
+import { installTapeStage, type TapeOptions } from './tape.js';
 
 /**
  * Builds the v1 lo-fi signal chain. Registers channels and parameter
@@ -28,7 +32,7 @@ import { installSamplerCrush } from './sampler-crush.js';
  * `?monoverb=0` / `?reverbdecay=7` / `?monobed=0`) so the pre-Phase-2 sound can
  * be restored for regression comparison without a rebuild. Omitted → default.
  */
-export interface LofiChainOptions {
+export interface LofiChainOptions extends TapeOptions {
   /** Mono reverb IR (centered tail, ~half the convolution cost) vs Tone's
    * stereo IR. Task 3. Default true; pass false for the old stereo IR. */
   monoReverb?: boolean;
@@ -53,21 +57,8 @@ export interface LofiChainOptions {
    * bit depth is honest for a below-full-scale signal. Must be a positive
    * finite number; anything else falls back to `KEYS_CRUSH_DRIVE_DEFAULT`. */
   keysCrushDrive?: number;
-  /** Master switch for the tape-texture stage: tanh saturation → wow/flutter
-   * placed before `warmth`, plus a parallel tape-hiss bed. AESTHETIC, default
-   * off pre-bake. See docs/tape-texture.md. */
-  tape?: boolean;
-  /** Linear pre-gain into the saturation waveshaper (inverted after by the
-   * makeup gain). Positive finite; else fallback to `TAPE_DRIVE_DEFAULT`. */
-  tapeDrive?: number;
-  /** Waveshaper oversample factor. `'2x'` expected as the alias-free choice
-   * at 32 kHz with gentle drive; `'4x'` is a conservative fallback. */
-  tapeOversample?: OverSampleType;
-  /** Tape-hiss bed level in dB (Tone.Volume). Finite; else fallback. */
-  tapeHissDb?: number;
-  /** Scalar multiplier on the three wow/flutter LFO amplitudes (ear-tuning
-   * knob without recompile). Positive finite; else fallback to 1. */
-  tapeWowDepth?: number;
+  // Tape-texture flags (`tape`, `tapeDrive`, `tapeOversample`, `tapeHissDb`,
+  // `tapeWowDepth`) are inherited from `TapeOptions` — see `./tape.js`.
 }
 
 const REVERB_DECAY_DEFAULT = 3;
@@ -78,72 +69,6 @@ const REVERB_PREDELAY = 0.02;
 const KEYS_CRUSH_DRIVE_DEFAULT = 4;
 const KEYS_CRUSH_BITS_DEFAULT = 12;
 const KEYS_CRUSH_RATE_DEFAULT = 4;
-
-// ── tape stage defaults ───────────────────────────────────────────
-// Placeholders pre-Sweep 1 / Sweep 2 (docs/tape-texture.md). Kept conservative
-// so an early `?tape=1` A/B doesn't reach for harshness. Baked values (drive,
-// oversample, hiss level, wow depths) will be frozen in a follow-up commit
-// after the offline sweep + in-mix ear pass.
-// Sweep-1 frozen values (docs/tape-texture.md §Measurement sweeps, 2026-07-08).
-// Drive 5 is the highest that passes the bass low-band gate (30-150 Hz band
-// stays within the OFF-repeat noise floor) after the A-fallback (bass path
-// excluded from tapeInput — see the `bassPan.connect(warmth)` line below).
-// Oversample '2x' is the lowest alias-free factor; 4x buys no measurable
-// improvement over 2x at drive 5. `none` sits at the noise-floor edge; 2x
-// is the conservative choice.
-const TAPE_DRIVE_DEFAULT = 5;
-const TAPE_OVERSAMPLE_DEFAULT: OverSampleType = '2x';
-// Level-match correction on top of the 1/drive makeup base
-// (docs/tape-texture.md §"Level-matched makeup gain", 2026-07-08). At drive
-// 5 the tanh saturator compresses peaks slightly (initial N=4 measurement
-// showed −0.87 dB, but overshot on trim; refined via N=8 measurement to
-// −0.35 dB mean RMS drop, SE ≈ 0.10 dB). Multiplying makeup by 10^(0.35/20)
-// ≈ 1.041 restores bypass-fair level — verified post-trim delta lands
-// within the between-render noise floor. Measured via
-// `packages/synth-tone/scripts/tape-makeup-match.ts`. Drive-dependent: if
-// TAPE_DRIVE_DEFAULT changes, re-run the harness and update this trim.
-const TAPE_SAT_MAKEUP_TRIM = 1.041;
-// Sweep 2 (2026-07-08): frozen at -72 dB after in-mix ear pass. Much
-// quieter than the initial -50 dB placeholder — real cassette hiss is
-// meant to sit as barely-perceptible "air" under the mix, not as an
-// audible bed. Solo-auditioning at -72 will sound almost silent; that's
-// correct. Character check must be in-mix.
-const TAPE_HISS_DB_DEFAULT = -72;
-const TAPE_WOW_DEPTH_DEFAULT = 1;
-const TAPE_WOW_BASE_S = 0.005;
-const TAPE_WOW_MAX_S = 0.008;
-const TAPE_SHAPER_CURVE_LEN = 4096;
-// Wow/flutter LFO table: (frequency Hz, target cents peak). Non-integer ratios
-// so the composite modulation is aperiodic (docs/tape-texture.md decision C1 —
-// a single sine reads as seasick vibrato). Amplitudes derive from cents at
-// build time via `centsToDelayAmp` so the target character is honest.
-const TAPE_WOW_LFOS: ReadonlyArray<{ freq: number; cents: number }> = [
-  { freq: 0.5, cents: 7 },
-  { freq: 0.37, cents: 5 },
-  { freq: 6.3, cents: 2 },
-];
-// Tape-hiss spectral recipe (docs/tape-texture.md §4, revised 2026-07-08).
-// Target band levels from published cassette bias-noise measurements (TDK SA
-// / Maxell XLII / Type II, no Dolby, silent recording): roughly flat below
-// 1 kHz, +3 dB/oct rise to a peak near 8 kHz, gentle rolloff above ~12 kHz.
-// Broadband, not bandpassed. Statistically stationary — no AM, no carrier
-// waveshaper. Grain lives in the spectrum, not the envelope. HP kills mains
-// sub + DC; HF shelf shapes the +3 dB/oct rise; LP with -12 dB/oct rolloff
-// brings 20 kHz to ~-60 dB while leaving 12 kHz audible.
-const TAPE_HISS_HP_HZ = 60;
-const TAPE_HISS_LP_HZ = 11000;
-const TAPE_HISS_LP_ROLLOFF = -12;
-const TAPE_HISS_SHELF_HZ = 1000;
-const TAPE_HISS_SHELF_GAIN_DB = 4;
-
-type OverSampleType = 'none' | '2x' | '4x';
-
-/** Peak delay-amplitude (seconds) for a sinusoidal delay modulation at
- * frequency `f` Hz that yields a peak pitch deviation of `c` cents.
- * Δ = 2^(c/1200) − 1;  A = Δ / (2π·f). See docs/tape-texture.md §3. */
-function centsToDelayAmp(cents: number, freqHz: number): number {
-  return (2 ** (cents / 1200) - 1) / (2 * Math.PI * freqHz);
-}
 
 export function buildLofiChain(adapter: ToneAudioAdapter, opts: LofiChainOptions = {}): void {
   // ── master & shared reverb return ───────────────────────────────
@@ -179,90 +104,10 @@ export function buildLofiChain(adapter: ToneAudioAdapter, opts: LofiChainOptions
   // floor / room, not the medium). See docs/tape-texture.md §Signal graph.
   const tapeInput = new Tone.Gain(1);
   reverb.connect(tapeInput);
-
-  // Tape stage (saturation → wow/flutter) + parallel hiss bed. Off pre-bake.
-  // Node refs live at this scope so the param registrations at the bottom
-  // can wrap them; guards on the registered params make them no-op cleanly
-  // when the stage isn't built. Sweep-driven values (drive, oversample, wow
-  // depths, hiss dB) are placeholders per docs/tape-texture.md — bake in a
-  // follow-up commit after Sweep 1 / Sweep 2.
-  let tapeDriveGain: Tone.Gain | null = null;
-  let tapeMakeupGain: Tone.Gain | null = null;
-  const tapeWowLfoAmps: number[] = [];
-  const tapeWowLfos: Tone.LFO[] = [];
-  let tapeHissVol: Tone.Volume | null = null;
-  // Tape default flipped to ON at close-out (2026-07-08). Pre-bake this
-  // was `if (opts.tape)`; ear + spectrum + level-match approvals all landed,
-  // so the default is now on. `?tape=0` still disables for regression A/B.
-  if (opts.tape ?? true) {
-    const rawDrive = opts.tapeDrive;
-    const drive =
-      typeof rawDrive === 'number' && Number.isFinite(rawDrive) && rawDrive > 0
-        ? rawDrive
-        : TAPE_DRIVE_DEFAULT;
-    const rawOversample = opts.tapeOversample;
-    const oversample: OverSampleType =
-      rawOversample === 'none' || rawOversample === '2x' || rawOversample === '4x'
-        ? rawOversample
-        : TAPE_OVERSAMPLE_DEFAULT;
-    const rawWowDepth = opts.tapeWowDepth;
-    const wowDepth =
-      typeof rawWowDepth === 'number' && Number.isFinite(rawWowDepth) && rawWowDepth > 0
-        ? rawWowDepth
-        : TAPE_WOW_DEPTH_DEFAULT;
-    const rawHissDb = opts.tapeHissDb;
-    const hissDb =
-      typeof rawHissDb === 'number' && Number.isFinite(rawHissDb)
-        ? rawHissDb
-        : TAPE_HISS_DB_DEFAULT;
-
-    tapeDriveGain = new Tone.Gain(drive);
-    // Symmetric tanh soft-clip. Makeup gain is a `1/drive` starting estimate;
-    // level-matching the bypass A/B via measured RMS is a Sweep-1 follow-up.
-    const shaper = new Tone.WaveShaper((x) => Math.tanh(x), TAPE_SHAPER_CURVE_LEN);
-    shaper.oversample = oversample;
-    tapeMakeupGain = new Tone.Gain((1 / drive) * TAPE_SAT_MAKEUP_TRIM);
-    const wowDelay = new Tone.Delay(TAPE_WOW_BASE_S, TAPE_WOW_MAX_S);
-    tapeInput.chain(tapeDriveGain, shaper, tapeMakeupGain, wowDelay, warmth);
-
-    // Three summed incommensurate sine LFOs modulate delayTime — non-integer
-    // ratio ⇒ aperiodic composite ⇒ irregular tape warble rather than a
-    // periodic sine wobble (the "rain lesson" — periodic mod reads as voiced
-    // sweep). Amps derived from target cents so intent is honest.
-    for (const { freq, cents } of TAPE_WOW_LFOS) {
-      const baseAmp = centsToDelayAmp(cents, freq);
-      tapeWowLfoAmps.push(baseAmp);
-      const amp = baseAmp * wowDepth;
-      const lfo = new Tone.LFO({ frequency: freq, min: -amp, max: amp, type: 'sine' }).start();
-      lfo.connect(wowDelay.delayTime);
-      tapeWowLfos.push(lfo);
-    }
-
-    // Parallel tape-hiss bed (docs/tape-texture.md §4, revised recipe):
-    //   white → HP 80 Hz → HF shelf +7 dB @ 1 kHz → LP 15 kHz → Volume → master
-    // Broadband, statistically stationary. HP kills mains sub / DC; HF shelf
-    // shapes the +3 dB/oct rise real cassette hiss shows from 1 kHz to a
-    // peak near 8 kHz; LP at 15 kHz with -12 dB/oct rolloff brings 20 kHz
-    // near the noise floor while leaving 12 kHz audible. Bypasses tape +
-    // warmth (it is the noise floor: must not be wowed / saturated, and
-    // warmth's LP must not eat it). Mono, always-on when `opts.tape`.
-    const hiss = new Tone.Noise('white').start();
-    const hissHp = new Tone.Filter({ type: 'highpass', frequency: TAPE_HISS_HP_HZ });
-    const hissShelf = new Tone.Filter({
-      type: 'highshelf',
-      frequency: TAPE_HISS_SHELF_HZ,
-      gain: TAPE_HISS_SHELF_GAIN_DB,
-    });
-    const hissLp = new Tone.Filter({
-      type: 'lowpass',
-      frequency: TAPE_HISS_LP_HZ,
-      rolloff: TAPE_HISS_LP_ROLLOFF,
-    });
-    tapeHissVol = new Tone.Volume(hissDb);
-    hiss.chain(hissHp, hissShelf, hissLp, tapeHissVol, adapter.master);
-  } else {
-    tapeInput.connect(warmth);
-  }
+  // Tape-texture stage (saturation → wow/flutter before warmth + parallel hiss
+  // bed), or a transparent `tapeInput → warmth` passthrough when off. Owns its
+  // own nodes; `tape.registerParams` is called below with the other params.
+  const tape = installTapeStage({ tapeInput, warmth, master: adapter.master }, opts);
 
   // ── keys (chord voicings + sparse melody) ────────────────────────
   // Keys keep the chorus + evoFilter coloring from the prototype.
@@ -301,9 +146,6 @@ export function buildLofiChain(adapter: ToneAudioAdapter, opts: LofiChainOptions
   // worklet loads async; crushIn→crushOut passes audio through until then
   // (and permanently if worklets are unavailable).
   if (opts.keysCrush) {
-    const rawDrive = opts.keysCrushDrive ?? KEYS_CRUSH_DRIVE_DEFAULT;
-    const rawBits = opts.keysCrushBits ?? KEYS_CRUSH_BITS_DEFAULT;
-    const rawRate = opts.keysCrushRate ?? KEYS_CRUSH_RATE_DEFAULT;
     const crushIn = new Tone.Gain(1);
     const crushOut = new Tone.Gain(1);
     evoFilter.connect(crushIn);
@@ -311,11 +153,9 @@ export function buildLofiChain(adapter: ToneAudioAdapter, opts: LofiChainOptions
     crushOut.connect(keysPan);
     crushOut.connect(chordEchoSend);
     void installSamplerCrush(crushIn, crushOut, {
-      factor: Number.isFinite(rawRate)
-        ? Math.min(Math.max(Math.round(rawRate), 1), 8)
-        : KEYS_CRUSH_RATE_DEFAULT,
-      bits: Number.isFinite(rawBits) ? Math.min(Math.max(rawBits, 1), 16) : KEYS_CRUSH_BITS_DEFAULT,
-      drive: Number.isFinite(rawDrive) && rawDrive > 0 ? rawDrive : KEYS_CRUSH_DRIVE_DEFAULT,
+      factor: clampIntOr(opts.keysCrushRate, 1, 8, KEYS_CRUSH_RATE_DEFAULT),
+      bits: clampOr(opts.keysCrushBits, 1, 16, KEYS_CRUSH_BITS_DEFAULT),
+      drive: posFiniteOr(opts.keysCrushDrive, KEYS_CRUSH_DRIVE_DEFAULT),
     });
   } else {
     evoFilter.connect(keysPan);
@@ -604,8 +444,9 @@ export function buildLofiChain(adapter: ToneAudioAdapter, opts: LofiChainOptions
   // fade completes, so there's no abrupt cut); when it rises back above we
   // restart it before ramping up. Tone.Noise recreates its internal
   // BufferSource on each `start()` (verified in tone@14.9.17 Noise._start), so
-  // stop→start resumes cleanly with no click.
-  const RAIN_OFF_THRESHOLD_DB = -110;
+  // stop→start resumes cleanly with no click. `RAIN_OFF_THRESHOLD_DB` is
+  // shared with the web demo (which derives its rain "off" level from it) —
+  // see `../constants.js`.
   let rainPlaying = true; // constructed with .start()
   let rainStopTimer: ReturnType<typeof setTimeout> | null = null;
   const cancelPendingStop = (): void => {
@@ -721,99 +562,9 @@ export function buildLofiChain(adapter: ToneAudioAdapter, opts: LofiChainOptions
       chordEchoSend.gain.rampTo(v, t, startTime);
     },
   });
-  // Tape stage params. All no-op cleanly when `opts.tape` is off (nodes are
-  // null). Drive updates the makeup gain in lockstep so the level-match
-  // holds — makeup = (1/drive) × TAPE_SAT_MAKEUP_TRIM (frozen constant that
-  // corrects for the tanh's peak-compression at the frozen drive; see
-  // docs/tape-texture.md §"Level-matched makeup gain"). Note: TRIM was
-  // measured at drive 5 and is technically drive-dependent; for a large
-  // drive change via this param, level-fairness may drift ±1 dB from the
-  // frozen match, which is acceptable for a drift knob (fine for gradual
-  // engine-driven modulation, not for wholesale drive changes).
-  adapter.registerParam('fx.tape.saturationDrive', {
-    set: (v) => {
-      if (!tapeDriveGain || !tapeMakeupGain || v <= 0) return;
-      tapeDriveGain.gain.value = v;
-      tapeMakeupGain.gain.value = (1 / v) * TAPE_SAT_MAKEUP_TRIM;
-    },
-    ramp: (v, t, startTime) => {
-      if (!tapeDriveGain || !tapeMakeupGain || v <= 0) return;
-      tapeDriveGain.gain.rampTo(v, t, startTime);
-      tapeMakeupGain.gain.rampTo((1 / v) * TAPE_SAT_MAKEUP_TRIM, t, startTime);
-    },
-  });
-  adapter.registerParam('fx.tape.wowDepth', {
-    set: (v) => {
-      if (tapeWowLfos.length === 0) return;
-      for (let i = 0; i < tapeWowLfos.length; i++) {
-        const base = tapeWowLfoAmps[i] ?? 0;
-        const lfo = tapeWowLfos[i];
-        if (!lfo) continue;
-        lfo.min = -base * v;
-        lfo.max = base * v;
-      }
-    },
-    ramp: (v, _t, _startTime) => {
-      // LFO.min/max are plain numbers, not Tone.Params — no ramp API. Apply
-      // at dispatch; the engine's 250 ms cadence is well below any wow depth
-      // drift rate we'd use, so the step is imperceptible.
-      if (tapeWowLfos.length === 0) return;
-      for (let i = 0; i < tapeWowLfos.length; i++) {
-        const base = tapeWowLfoAmps[i] ?? 0;
-        const lfo = tapeWowLfos[i];
-        if (!lfo) continue;
-        lfo.min = -base * v;
-        lfo.max = base * v;
-      }
-    },
-  });
-  adapter.registerParam('bed.hiss.level', {
-    set: (v) => {
-      if (!tapeHissVol) return;
-      tapeHissVol.volume.value = v;
-    },
-    ramp: (v, t, startTime) => {
-      if (!tapeHissVol) return;
-      tapeHissVol.volume.rampTo(v, t, startTime);
-    },
-  });
-}
-
-/**
- * Mono drop-in for `Tone.Reverb` (Task 3). `Tone.Reverb` hard-codes a *stereo*
- * IR (independent L/R noise → `OfflineContext(2, …)`), so its ConvolverNode
- * does 2-channel convolution. Feeding a ConvolverNode a **1-channel** IR
- * convolves both input channels with the same response — a centered tail at
- * ~half the cost.
- *
- * The IR is generated exactly like Tone's `Reverb.generate()` (white noise
- * through a gain envelope: silent until `preDelay`, then an exponential
- * approach to 0 over `decay`) but in a mono `OfflineContext`, and normalize is
- * left at the ConvolverNode default (true) to match `Tone.Reverb`'s level. The
- * IR render is async, so — like `Tone.Reverb` — the convolver is silent for the
- * few ms until it resolves; the returned node can be wired immediately.
- *
- * Returned as a bare `Tone.Convolver` (no wet/dry mix), which is equivalent to
- * `Tone.Reverb({ wet: 1 })`: a 100%-wet send/return.
- */
-function buildMonoReverb(decay: number, preDelay: number): Tone.Convolver {
-  const conv = new Tone.Convolver({ normalize: true });
-  void generateMonoIR(decay, preDelay).then((buffer) => {
-    conv.buffer = buffer;
-  });
-  return conv;
-}
-
-function generateMonoIR(decay: number, preDelay: number): Promise<Tone.ToneAudioBuffer> {
-  const context = new Tone.OfflineContext(1, decay + preDelay, Tone.getContext().sampleRate);
-  const noise = new Tone.Noise({ context }).start(0);
-  const gainNode = new Tone.Gain({ context }).toDestination();
-  noise.connect(gainNode);
-  // Mirror Tone.Reverb.generate(): predelay gate, then exponential decay.
-  gainNode.gain.setValueAtTime(0, 0);
-  gainNode.gain.setValueAtTime(1, preDelay);
-  gainNode.gain.exponentialApproachValueAtTime(0, preDelay, decay);
-  return context.render();
+  // Tape-stage params (fx.tape.saturationDrive / fx.tape.wowDepth /
+  // bed.hiss.level) — owned by the tape module; no-op when the stage is off.
+  tape.registerParams(adapter);
 }
 
 /** Map a 0..1 warmth slider to a low-pass cutoff in Hz.

@@ -34,6 +34,10 @@ plugin, sharing one engine.
   clamp / nearest-pitch math in a scheduler.
 - **`docs/gaps.md`** — unresolved questions; check before assuming
   something's decided.
+- **`docs/documentation-procedure.md`** — how a feature doc lives and
+  closes (plan → active → collapsed decision-record). Read before
+  writing a new doc or closing one out. Frozen values live once in
+  code; docs point at the symbol, never restate the number.
 - **Other `docs/*.md`** — discoverable via `ls docs/`. Read on demand
   when working in a relevant area (harmony, dynamics, ornaments,
   lofi-study, stack, mobile).
@@ -64,6 +68,14 @@ to slow down, not speed up.
 - **One question at a time.** In design discussions, raise a single
   lettered question per message, not a batch — the user wants to
   address each in detail.
+- **Lock taste, not physics.** One-question-at-a-time and doc-locking
+  are for *taste / scope* decisions. An empirical claim — what a DSP
+  node actually does to the real signal — may not be written into a
+  doc as "LOCKED" without a spike measurement attached. Several locked
+  tape/crush claims ("tanh adds +1–2 dB mid harmonics") didn't survive
+  first contact with the signal. Hypothesize the physics; budget 1–2
+  recipe iterations explicitly; don't promise a one-shot the work
+  can't keep.
 
 ## Workflow conventions
 
@@ -71,18 +83,27 @@ to slow down, not speed up.
   unless explicitly asked.
 - **Verify changes yourself before asking the user to.** The user is
   not the test harness. Audio/engine changes: confirm numerically
-  first via `packages/core/scripts/render-snippet.ts` +
-  `analyze-seed.ts` diffs (twice, an "inaudible" change was a real
-  wiring bug). UI changes: run the dev server
+  first (the `/listen-check` skill — twice, an "inaudible" change was a
+  real wiring bug). UI changes: run the dev server
   (`http://localhost:5173/loam/` — note the `/loam/` base path) and
   look at it; don't verify visual work with `pnpm build` alone. When
   a user ear-test is finally needed, ask about exactly one thing.
 - **Abstract shared values.** A value used in more than one place gets
   raised into a shared constant/abstraction, never duplicated
   (rain/warmth and theme-color hardcoding both had to be corrected).
-- **Close-out is part of the feature.** Finishing work includes
-  updating `stage-list.md` and the driving task doc (with an
-  assumptions log) — without being asked. See the `close-out` skill.
+- **Ear-test preflight.** Before any listening/ear session, check the
+  boot flag-override log and confirm the context sample rate. A stale
+  `loam.flag.*` (e.g. a `samplerate=20050` typo) has silently voided
+  entire listening sessions — including an approval *and* the bug
+  report that acted on it.
+- **Worktree per concurrent workstream.** Trunk-only refers to
+  *commits*, not working trees. Concurrent agents / workstreams get
+  separate worktrees (`EnterWorktree`) — a shared dirty tree caused
+  foreign hunks in commits and gate-failing WIP inherited by the next
+  session. Don't leave gate-failing work in the tree between sessions.
+- **Close-out is part of the feature.** Finishing work updates docs
+  without being asked — the `/close-out` skill owns the ritual (per
+  `docs/documentation-procedure.md`).
 - **Skills:** `/ship` (gate → commit → push → watch CI),
   `/listen-check` (programmatic audio verification), `/close-out`,
   `/profile` (synth-chain CPU numbers). Prefer them over ad-hoc
@@ -97,12 +118,10 @@ to slow down, not speed up.
   pinned at `Seed.from(42n)` with `bpm: 74`. Any change that shifts
   it is a deliberate seed-format break — document in commit message
   and `docs/seed-format.md` §7.3a.
-- **Before any `git push`**, run `pnpm lint && pnpm typecheck && pnpm
-  test` from the repo root and fix failures first — this is the gate
-  CI enforces (install · lint · typecheck · deadcode · test · build).
-  A git pre-push hook (`.githooks/pre-push`, enabled via
-  `core.hooksPath`) now enforces this; never bypass with
-  `--no-verify` unless explicitly asked. Run the gate unsilenced
-  (no `>/dev/null`) and always via `pnpm`, never `npm`.
-  Note: biome bans non-null assertions (`x!`) and tsconfig has
-  `noUncheckedIndexedAccess` on, so indexed access is `T | undefined`.
+- **Before `git push`**: the pre-push hook (`.githooks/pre-push`, via
+  `core.hooksPath`) runs the CI gate (install · lint · typecheck ·
+  deadcode · test · build); the `/ship` skill drives it. Never bypass
+  with `--no-verify` unless asked; always `pnpm`, never `npm`; run
+  unsilenced (no `>/dev/null`). Note: biome bans non-null assertions
+  (`x!`) and tsconfig has `noUncheckedIndexedAccess` on, so indexed
+  access is `T | undefined`.

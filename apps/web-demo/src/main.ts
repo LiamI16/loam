@@ -2,7 +2,10 @@ import { registerSW } from 'virtual:pwa-register';
 import { EmberEngine, Seed } from '@loam/core';
 import {
   buildLofiChain,
+  DEFAULT_SAMPLE_RATE,
   type LofiChainOptions,
+  RAIN_SILENT_DB,
+  SAMPLE_RATE_ALLOWLIST,
   ToneAudioAdapter,
   volToDb,
   warmHz,
@@ -409,12 +412,10 @@ const uiState: { rainMode: RainMode; rainPhase: 'heavy' | 'light'; vinyl: boolea
 const RAIN_STEADY_DB = -33; // user-toggled "on" mode
 const RAIN_HEAVY_DB = -33; // cycle: foreground rain
 const RAIN_LIGHT_DB = -50; // cycle: rain through a wall — still ambient, never silent
-// Dedicated "off" mode. Finite (−∞ would break rampTo) but below the chain's
-// rain-source gate (RAIN_OFF_THRESHOLD_DB = −110 in lofi.ts) so the chain
-// stops the pink-noise source + idle bandpass biquads once the fade settles,
-// instead of leaving them running silently (docs/audio-cpu-plan.md Task 2).
-const RAIN_SILENT_DB = -120;
-
+// Dedicated "off" mode: `RAIN_SILENT_DB` (from @loam/synth-tone) is finite
+// (−∞ would break rampTo) but below the chain's rain-source gate, so the chain
+// stops the pink-noise source + idle bandpass biquads once the fade settles
+// (docs/audio-cpu-plan.md Task 2). Derived from the shared threshold there.
 function rainTargetDb(): number {
   if (uiState.rainMode === 'on') return RAIN_STEADY_DB;
   if (uiState.rainMode === 'cycle')
@@ -510,20 +511,24 @@ function readLofiFlags(): LofiChainOptions {
 // rate) or `=22050` (performance mode); persisted to localStorage. Only takes
 // effect on a fresh page load — the context is created once at the first
 // adapter construction. Sane bounds guard against a typo bricking audio.
-const DEFAULT_SAMPLE_RATE = 32000;
+// Validated against `SAMPLE_RATE_ALLOWLIST` (an allowlist, not a range): a
+// range check previously let a typo'd `samplerate=20050` through and voided
+// ear tests for days. Both the incoming flag *and* an already-persisted value
+// are checked, so stale contamination self-heals to the default.
 function readSampleRateFlag(): number {
   const qs = new URLSearchParams(location.search);
   const key = 'loam.flag.samplerate';
   const raw = qs.get('samplerate');
   if (raw !== null) {
     const n = Number(raw);
-    if (Number.isFinite(n) && n >= 8000 && n <= 96000) {
+    if (SAMPLE_RATE_ALLOWLIST.includes(n)) {
       localStorage.setItem(key, String(n));
       return n;
     }
   }
   const stored = localStorage.getItem(key);
-  return stored !== null ? Number(stored) : DEFAULT_SAMPLE_RATE;
+  const storedN = stored !== null ? Number(stored) : Number.NaN;
+  return SAMPLE_RATE_ALLOWLIST.includes(storedN) ? storedN : DEFAULT_SAMPLE_RATE;
 }
 
 // Boot-time visibility for persisted overrides. loam.flag.* localStorage is

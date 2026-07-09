@@ -1,5 +1,6 @@
 export { ToneAudioAdapter } from './adapter.js';
 export * from './chains/index.js';
+export * from './constants.js';
 export type {
   ChannelRegistration,
   ChannelReleaseAll,

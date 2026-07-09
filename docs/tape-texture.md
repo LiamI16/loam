@@ -642,3 +642,54 @@ async render loops. Fixed cost, not per-voice.
 
 `if (opts.tape ?? true)` in `chains/lofi.ts` — the stage is now on by
 default. `?tape=0` still available for regression A/B.
+
+## Open questions / revisit (intent-vs-reality gaps)
+
+Surfaced by an intent audit (2026-07-09) of the shipped tweaks against the
+*why* of decisions A–E. None betray intent; each is a place where what landed
+diverges from what we reasoned about, logged so a later pass can revisit
+rather than rediscover.
+
+1. **Saturation ships as compression, not harmonic warmth.** Decision D
+   specced saturation for *harmonic glue* (+1–2 dB mid rise). The sweep found
+   tanh on a real mix produces proportional RMS compression, not measurable
+   added harmonics; drive 5 is "mild tape-squeeze." Legitimate tape character,
+   but the *mechanism* we reasoned about isn't what's running, and the harmonic
+   intent was never confirmed (unmeasurable), only the compression. **Revisit
+   if** a listener reports the stage doesn't read as "warmer" — the node may be
+   doing less than intended.
+
+2. **Magnitude unverified against the launch bar.** Every frozen measurement is
+   a *do-no-harm* gate (level-matched, bass clean, hiss subliminal at −72 dB,
+   oversample a no-op, wow unmeasured). None confirm the stage *positively*
+   makes output "read as production quality more than harmony does" — the
+   intent that put it first in the launch queue. Individual effects are all on
+   the subtle end. **Revisit:** run one deliberate `tape` ON vs `?tape=0` A/B
+   ear check (and/or an aggregate spectral-difference render) to confirm the
+   stage is audibly more produced, not merely harmless, before leaning on it as
+   a launch selling point.
+
+3. **Bass-translation intent quietly dropped.** Decision A wanted bass *included*
+   specifically to add harmonics a pure-sine bass lacks (small-speaker
+   translation). It ships *excluded* — driven by the drive-5 mud gate, not by
+   that argument (the doc's "already punchy" rationale actually contradicts the
+   original reasoning). The exclusion is consistent with the chain's existing
+   bass-isolation philosophy, so it's defensible, but the coupling wasn't
+   explored. **Revisit if** bass feels thin on laptop/phone speakers: try
+   bass-in + lower global drive, or a bass-only pre-saturation HP (plan §A
+   option i), which could keep both the translation benefit and a clean low end.
+
+4. **Wow "not seasick" intent rests on nothing measured.** Sweep 2's numerical
+   check was abandoned (can't pitch-track polyphonic pad), and depths (≈14 cents
+   peak, 2–5× real cassette) were frozen at design values on general ear
+   approval alone. Fine under loose-lofi framing, but the specific anti-seasick
+   guarantee (decision C) is unverified. **Revisit** with probe-injection (pure
+   sine into the tape stage) if wow ever reads as pitch instability rather than
+   character.
+
+5. **Texture beds widened the reseed failure surface (plan didn't foresee).**
+   Always-on broadband beds + shared filter params mean a seed-swap that slams
+   filters open blasts white noise through the beds. This drove the separate
+   `ParamSetter.cancel` / immediate-roll work. Lesson for future always-on
+   texture nodes: adding broadband beds amplifies any param-collision failure
+   mode on engine handoff — account for it up front.
