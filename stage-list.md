@@ -56,6 +56,7 @@ Compact summary — full implementation notes in the linked docs.
 | Melody rewrite (Phases 1–3) | Germ-driven scheduler: F1 min-cap chord coupling, 10 templates, 4-way emission rule, 6 transformations + retrograde gating, compound 2-chain, per-seed swing, per-emission jitter | See `docs/melody.md` + §7.3a |
 | analyze-seed dev tool | Scheduler-internal-state inspector (germ shape, per-seed parameter draws, effective-activity samples) — complements render-snippet | `scripts/analyze-seed.ts` |
 | Density option removed | `density` engine option + `densityStream` + density-fbm seed children excised; web-demo slider removed. Per-seed melody-activity now fully encapsulates the role | inline |
+| Tape texture stage | Master-bus tanh saturation → wow/flutter before warmth (drive 5, level-match trim 1.041, oversample 2x, bass A-fallback) + parallel HF-shelf broadband hiss bed (white → HP 60 → shelf +4 @ 1k → LP 11k, −72 dB, no AM), spectrum-locked to Sony HF-90 Type I ferric | See `docs/tape-texture.md` |
 
 **Drum rewrite details:** `drum-scheduler.ts` rewritten. Per-voice
 constant micro-timing (snare drag +15 ms, hat slight ahead −3 ms,
@@ -119,11 +120,60 @@ sorted after the pad notes; falls outside the first-6 lock window).
 
 ---
 
-## Next up
+## Next up — pre-launch order of operations
 
-### Chord comping — remaining (B envelope refinement + D vocabulary)
+> **Publicity gate (2026-07-08).** UI tasks are complete and the
+> project is heading toward public release. Three musical items sit
+> between here and launch, ordered by first-listen impact (the tape
+> texture stage — the fourth item on this list originally — landed
+> 2026-07-08; see Done above). The paused sampler-character buzz is
+> *not* a blocker — it's gated behind link flags. Order below is
+> launch-priority, not architectural category:
+>
+> 1. **Arrangement controller** — highest absolute impact (kills the
+>    wall-of-sound sameness); more work but now unblocked (drums /
+>    bass / melody are final).
+> 2. **Chord B** — envelope refinement; listen pass first, may need
+>    nothing.
+> 3. **Chord D** — last / possibly defer past launch: blocked on the
+>    `docs/gaps.md` vocabulary decision and carries genre-tension
+>    risk.
+>
+> 1 is what changes whether the output *sounds produced*; 2–3 refine
+> an already-working chord layer.
 
-A (rhythm) and C (voicing variety) are done. Remaining:
+### 1. Arrangement controller — phrase structure + dropouts + silences
+
+The engine has no concept of "8-bar phrase" or "16-bar section." All
+instruments play continuously; nothing ever drops out. Real lofi
+tracks *breathe* — sometimes 8 bars of pad + melody only (drums out),
+sometimes drums + bass alone, sometimes everything but kick steps
+out. The coming-and-going *is* the variation; you don't need to
+change what each instrument plays as much as you need to change
+whether it plays. This is the biggest "tech demo vs. music" tell.
+
+**Bundle (new module + engine wiring):**
+- Phrase counter on `EngineState` (current bar within the active
+  N-bar phrase).
+- New `ArrangementController` that decides per phrase which
+  instruments are active. Sub-schedulers respect the active mask
+  (emit no events when muted).
+- Smooth handoffs at phrase boundaries (no mid-phrase mutes).
+- Genuine silences allowed (the engine *can* go to just pad + crackle
+  or just pad for short windows).
+
+**Now unblocked:** required drums + bass + melody to be in their
+final form — all three are.
+
+**Files:** new `arrangement-controller.ts`, `ember.ts` wiring, every
+sub-scheduler reads the mute mask.
+
+---
+
+### 2 & 3. Chord comping — remaining (B envelope refinement + D vocabulary)
+
+A (rhythm) and C (voicing variety) are done. Remaining (lower
+launch-priority than texture + arrangement above):
 
 - **B — Hit envelope refinement.** Per-beat duration variation (beat
   1 vs beat 3 vs pickup vs sync); possible per-seed envelope shape.
@@ -591,56 +641,6 @@ web-demo UI additions, possibly `docs/seed-identity.md` doc updates.
 
 ---
 
-### Arrangement controller — phrase structure + dropouts + silences
-
-The engine has no concept of "8-bar phrase" or "16-bar section." All
-instruments play continuously; nothing ever drops out. Real lofi
-tracks *breathe* — sometimes 8 bars of pad + melody only (drums out),
-sometimes drums + bass alone, sometimes everything but kick steps
-out. The coming-and-going *is* the variation; you don't need to
-change what each instrument plays as much as you need to change
-whether it plays.
-
-**Bundle (new module + engine wiring):**
-- Phrase counter on `EngineState` (current bar within the active
-  N-bar phrase).
-- New `ArrangementController` that decides per phrase which
-  instruments are active. Sub-schedulers respect the active mask
-  (emit no events when muted).
-- Smooth handoffs at phrase boundaries (no mid-phrase mutes).
-- Genuine silences allowed (the engine *can* go to just pad + crackle
-  or just pad for short windows).
-
-**Why now:** requires drums + bass + melody to be in their final
-form (only meaningful if there are multiple elements worth muting).
-
-**Files:** new `arrangement-controller.ts`, `ember.ts` wiring, every
-sub-scheduler reads the mute mask.
-
----
-
-### Lofi texture nodes — wow/flutter, tape hiss, bitcrush, saturation
-
-The canonical lofi texture knobs (per `docs/lofi-study.md` §9) that
-the current chain entirely lacks. Currently we have vinyl crackle
-(via `Channels.BELL`) and chorus depth drift — that's it. Real lofi
-uses these tape/vinyl artifacts as foundational color, not optional
-garnish.
-
-**Bundle (all touch `chains/lofi.ts` adding new audio nodes):**
-- Wow/flutter LFO modulating the master tape "pitch."
-- Tape hiss bed (pink noise at very low level, gated lightly).
-- Bitcrush or sample-rate-reducer for that mid-fi character.
-- Saturation / soft-clip for warmth.
-- Expose each as a `ParamSetter` so listen-distance fBm can drift
-  them (replaces the deferred "real listen-distance targets" note
-  from Stage 7b).
-
-**Files:** `chains/lofi.ts`, possibly new ParamEvent emissions in
-`ember.ts`.
-
----
-
 ### Timbre swaps + counter-melody
 
 Currently one Rhodes timbre handles both chords *and* melody. Real
@@ -729,3 +729,8 @@ These could be addressed any time:
 
 - **Vinyl crackle responsive to dynamics** — crackle currently fires
   uniformly. Real vinyl noise clusters in quiet passages. Tiny tweak.
+
+
+
+## Buffer Improvements
+Currently, rolling or pausing has a slight delay due to the pausing. We can improve this by making actions instantaneously go through and the buffer only loads after a set amount of time has passed (eg 1 sec). This way pausing and rolling become instantaenous while still having preloading benefits. 
