@@ -126,3 +126,62 @@ describe('adapter param-event time-locking', () => {
     expect(first.startTime).toBeUndefined();
   });
 });
+
+describe('adapter engine handoff (reseed collision guard)', () => {
+  beforeEach(() => {
+    state.now = 0;
+  });
+
+  // Regression net for the reseed "white-noise blast": a seed swap must anchor
+  // the incoming engine's automation *strictly forward* of the outgoing seed's
+  // scheduled horizon, so the two seeds' ramps never collide on a shared filter
+  // signal (a collision slams the filter open and blasts the noise beds). The
+  // guarantee is `handoffEngine`'s forward anchor
+  // (`max(now, latestScheduledAudioTime + 0.005)`) — assert it at the param
+  // dispatch, where a collision would otherwise show as an incoming ramp
+  // scheduled at/behind the outgoing one on the same target.
+  it('anchors the incoming seed forward of the outgoing horizon on a shared param', async () => {
+    state.now = 100;
+
+    const calls: Array<{ startTime?: number }> = [];
+    const adapter = new ToneAudioAdapter();
+    // A shared, engine-driven filter signal — exactly the kind that collided.
+    adapter.registerParam('fx.evoFilter.cutoff', {
+      set: () => {},
+      ramp: (_value, _durationSec, startTime) => {
+        calls.push({ startTime });
+      },
+    });
+
+    // Outgoing seed: emits one ramp on the shared signal, then start playing.
+    adapter.setEngine(
+      fixedEngine([
+        { kind: 'param', target: 'fx.evoFilter.cutoff', value: 1200, rampMs: 100, time: 0 },
+      ]),
+    );
+    await adapter.start();
+
+    // After the first pump the horizon sits at now + LOOKAHEAD_SEC.
+    // (start() anchors at now=100, so the outgoing ramp lands at exactly 100.)
+    expect(calls).toHaveLength(1);
+    const outgoing = calls[0]?.startTime;
+    if (outgoing === undefined) throw new Error('expected outgoing ramp startTime');
+    expect(outgoing).toBeCloseTo(100, 6);
+
+    // Reseed without advancing the audio clock — the worst case for collision.
+    adapter.handoffEngine(
+      fixedEngine([
+        { kind: 'param', target: 'fx.evoFilter.cutoff', value: 400, rampMs: 100, time: 0 },
+      ]),
+    );
+
+    expect(calls).toHaveLength(2);
+    const incoming = calls[1]?.startTime;
+    if (incoming === undefined) throw new Error('expected incoming ramp startTime');
+    // The load-bearing assertion: the incoming ramp is anchored strictly past
+    // the outgoing seed's horizon (now + LOOKAHEAD_SEC = 100.75), not on top of
+    // the still-scheduled outgoing ramp — so the two never fight on the signal.
+    expect(incoming).toBeGreaterThan(outgoing);
+    expect(incoming).toBeGreaterThan(100.75);
+  });
+});
