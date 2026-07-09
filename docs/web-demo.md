@@ -429,6 +429,60 @@ so the user is never stranded at "warming up…".
 `maximum-scale=1` in the viewport meta disables pinch-zoom — an
 accessibility smell. Drop it unless there's a concrete reason.
 
+#### 24. Seamless engine handoff on roll (no dead-air hiccup) — DONE
+
+Rolling a new seed (Roll / R / pin / seed-enter) used to blink to
+silence for up to `LOOKAHEAD_SEC` (~0.75 s) before the new seed came in —
+`swapEngine` did `adapter.stop()` (mute gate + release voices) →
+`setEngine` → `start()`, and `start()` holds the mute gate at 0 across the
+forward-anchor gap. Read as a "hiccup."
+
+New primitive `ToneAudioAdapter.handoffEngine(next)` swaps engines
+**without interrupting playback**: no gate mute, no voice release. The
+previous seed's already-committed notes ring out while the new engine
+schedules *forward* of them, and the shared mute gate **crossfades** the
+two (fade old out over the bridge → floor at the handoff → fade new in).
+`swapEngine` (playing branch) now calls it; `applySeed`/`reseed` became
+synchronous as a result. Also the seamless-swap primitive the future
+"track per tab" feature will reuse.
+
+**Crossfade knobs** (`packages/synth-tone/src/adapter.ts`, tuned by ear
+2026-07-09): `HANDOFF_FADE_OUT_SEC = 0.3`, `HANDOFF_FLOOR = 0.2`,
+`HANDOFF_FADE_IN_SEC = 0.7`.
+
+**Files:** `packages/synth-tone/src/adapter.ts` (`handoffEngine` + knobs),
+`apps/web-demo/src/main.ts` (`swapEngine`/`applySeed`/`reseed`).
+
+**Findings log (the load-bearing constraint):**
+
+- **The gap is the shared graph's hard floor, not a tunable delay.** The
+  instruments are shared *mono* voices, and Tone rejects scheduling a
+  note earlier than one already queued on that voice. On a roll the old
+  seed has committed notes out to ~`LOOKAHEAD_SEC`, so the new seed
+  *cannot* start before that horizon — the earliest legal start equals
+  the existing forward anchor. Trying to start earlier throws inside
+  `pumpOnce`, which killed the pump → dead silence. So instant-and-clean
+  is impossible on one graph; the only fix is to *fill* the gap (old tail
+  bridges it), not shrink it.
+- **Overlap is safe for notes but NOT for params.** An earlier attempt
+  anchored the new seed at `now` and let it overlap. Notes on shared
+  voices threw (above); separately, the new engine's param ramps
+  (`evoFilter.cutoff`, `drumBus.cutoff`, `master.warmth`) collided with
+  the old seed's still-scheduled ramps on the *same* shared signals,
+  slamming the filters open → white noise through the noise beds. The
+  forward anchor sidesteps both: new notes and new params are all later
+  than the old horizon, so nothing collides.
+- **Single-gate crossfade has an inherent sag.** Old and new occupy
+  disjoint time windows on the one shared gate, so the crossfade is
+  sequential (down-then-up), not overlapping — a linear ramp to 0 leaves
+  a loudness hole at the midpoint. `HANDOFF_FLOOR > 0` (0.2) is the fix:
+  the old rings faintly under the new instead of vanishing. A *true*
+  overlapping crossfade would need two graphs (deferred — see below).
+- **Deferred: two-graph crossfade** for a genuinely instant + clean
+  transition (new seed at `now`, old graph faded out in isolation). ~2×
+  synth-chain CPU during the crossfade; only worth it if the ~0.75 s
+  bridge or the residual sag becomes a real complaint.
+
 ---
 
 ## Aesthetic refinement pass (2026-06-24)

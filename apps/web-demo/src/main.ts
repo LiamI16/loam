@@ -569,10 +569,12 @@ function buildAudio(seedValue: bigint): { adapter: ToneAudioAdapter; engine: Emb
   return { adapter: a, engine: e };
 }
 
-/** Swap a freshly-built engine into the running adapter. Brief fade for
- * clean handoff if currently playing; otherwise just swap. Used by
- * reseed (the only remaining lifecycle that swaps engines). */
-async function swapEngine(next: EmberEngine): Promise<void> {
+/** Swap a freshly-built engine into the running adapter. When playing, hands
+ * off seamlessly — the previous seed rings out while the new one schedules in
+ * behind it, so a roll has no dead-air hiccup (see `adapter.handoffEngine`);
+ * when paused, just swaps. Used by reseed (the only remaining lifecycle that
+ * swaps engines). */
+function swapEngine(next: EmberEngine): void {
   const nextBpm = next.getOptions().bpm;
   setBeatCss(nextBpm);
   setSeedMeta(nextBpm);
@@ -581,11 +583,8 @@ async function swapEngine(next: EmberEngine): Promise<void> {
     return;
   }
   if (playing) {
-    adapter.stop();
-    await new Promise((r) => setTimeout(r, 30));
-    adapter.setEngine(next);
+    adapter.handoffEngine(next);
     engine = next;
-    await adapter.start();
   } else {
     adapter.setEngine(next);
     engine = next;
@@ -848,22 +847,22 @@ $<HTMLButtonElement>('vinyl').addEventListener('click', (e) => {
 // Apply a seed to the running engine + UI, without touching history.
 // Shared by reseed (which also writes the URL) and popstate (where the
 // URL already reflects the target, so only the apply half is needed).
-async function applySeed(newSeed: bigint): Promise<void> {
+function applySeed(newSeed: bigint): void {
   currentSeed = newSeed;
   seedInput.value = newSeed.toString();
-  await swapEngine(buildEngine(newSeed));
+  swapEngine(buildEngine(newSeed));
 }
 
 // Reseed from an explicit user action (roll / R / seed-input enter).
 // Pushes a history entry by default so Back returns to the previous seed;
 // pass 'replace' to overwrite the current entry instead (initial promote).
-async function reseed(newSeed: bigint, history: 'push' | 'replace' = 'push'): Promise<void> {
+function reseed(newSeed: bigint, history: 'push' | 'replace' = 'push'): void {
   // Permalink without reload — preserves slider state.
   const url = new URL(window.location.href);
   url.searchParams.set('seed', newSeed.toString());
   if (history === 'push') window.history.pushState({}, '', url.toString());
   else window.history.replaceState({}, '', url.toString());
-  await applySeed(newSeed);
+  applySeed(newSeed);
 }
 
 // Back / Forward: the URL already carries the target seed, so re-apply it

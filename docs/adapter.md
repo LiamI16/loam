@@ -186,6 +186,24 @@ First-ever start: watermark is 0, no offset. Subsequent restarts within
 the lookahead: anchor just past pending events. Inaudible because the
 master gate is faded down during the swap anyway.
 
+**`handoffEngine(next)` — swap without interrupting playback.** A roll or
+(future) tab-driven seed change doesn't need the stop→swap→start cycle
+(which mutes the gate across the anchor gap → an audible dead-air hiccup).
+`handoffEngine` instead keeps playback live: no gate mute, no voice
+release. The previous seed's already-committed notes ring out while the
+new engine schedules *forward* of the watermark (same `max(now,
+latestScheduledAudioTime + 5 ms)` anchor). The forward anchor is
+mandatory, not cosmetic — the per-voice reject-before-last-scheduled rule
+above means the new seed genuinely *cannot* start before the old horizon,
+so the ~lookahead bridge is a hard floor, not a tunable delay. Params ride
+the same anchor, so the outgoing/incoming automation streams never collide
+on a shared signal (an earlier "overlap at now" attempt slammed the shared
+filter cutoffs open → white noise). The mute gate crossfades the two seeds
+(they occupy disjoint windows on the shared gate, so it's a sequential
+down-to-`HANDOFF_FLOOR`-then-up ramp, not a true overlap). A genuinely
+instant + clean transition would need two graphs — deferred; see
+`docs/web-demo.md` §24.
+
 ## 10. Channels register a `(trigger, releaseAll?)` callback pair
 
 Stage 3's first cut had channels register a `Tone.PolySynth` directly.

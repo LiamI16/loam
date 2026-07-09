@@ -23,6 +23,18 @@ const TICK_INTERVAL_MS = 50;
 /** Master-bus fade-out time when stop() is called. ~10 ms is short enough
  * to feel instant and long enough to avoid an audible click. */
 const STOP_FADE_SEC = 0.01;
+// ── live-handoff crossfade shape (see `handoffEngine`) — tune by ear ──
+/** Seconds the outgoing seed takes to fall from full volume to
+ * `HANDOFF_FLOOR`, positioned to *end* at the handoff. Capped by the bridge
+ * length (~`LOOKAHEAD_SEC`), so a larger value just fades across the whole
+ * bridge; a smaller value holds the old seed at full, then fades late. */
+const HANDOFF_FADE_OUT_SEC = 0.3;
+/** Gate level at the handoff instant. 0 = full dip (the loudness "sag" — old
+ * gone, new not yet risen); higher = the old seed stays faintly audible under
+ * the incoming seed but there's no hole. The main knob for "natural". */
+const HANDOFF_FLOOR = 0.2;
+/** Seconds the incoming seed takes to rise from `HANDOFF_FLOOR` to full. */
+const HANDOFF_FADE_IN_SEC = 0.7;
 
 /** Swap Tone's default audio context for one with `latencyHint: 'playback'`
  * — a ~250–500 ms buffer that survives scroll/background-tab hiccups without
@@ -128,6 +140,53 @@ export class ToneAudioAdapter {
   /** Attach the engine the adapter will pull events from. */
   setEngine(engine: Engine): void {
     this.engine = engine;
+  }
+
+  /**
+   * Swap to a new engine *without interrupting playback* — the seamless
+   * alternative to `stop()` → `setEngine()` → `start()` for a roll or a
+   * tab-driven seed change. The previous seed's already-committed notes ring
+   * out (no gate mute, no voice release) while the new engine schedules
+   * *forward* of them, so the old tail bridges the ~`LOOKAHEAD_SEC` until the
+   * new seed's first events land — no dead-air hiccup.
+   *
+   * The forward anchor is mandatory, not a preference: the instruments are
+   * shared mono voices whose per-voice scheduling times must strictly
+   * increase, so the new seed *cannot* be scheduled earlier than the old
+   * seed's horizon (`latestScheduledAudioTime`) — Tone rejects backward times.
+   * Params ride the same forward anchor, so the outgoing and incoming
+   * automation streams never collide on a shared signal. Only valid while
+   * already playing (the pump loop and mute gate must be live).
+   *
+   * The mute gate crossfades the two seeds. They occupy *disjoint* windows on
+   * the shared gate — the outgoing seed's committed notes fill `[now,
+   * startAudioTime]`, the incoming seed starts at `startAudioTime` — so a
+   * single down-then-up ramp fades the old seed out across the bridge, then
+   * fades the new one in, rather than letting the old tail ring at full level
+   * under the new seed.
+   */
+  handoffEngine(next: Engine): void {
+    this.engine = next;
+    next.reset();
+    const now = Tone.now();
+    this.startAudioTime = Math.max(now, this.latestScheduledAudioTime + 0.005);
+
+    // Crossfade on the shared gate: hold the outgoing seed at full until its
+    // fade-out window, ramp down to HANDOFF_FLOOR at the handoff, then ramp the
+    // incoming seed up. The fade-out can't outlast the bridge (there's no old
+    // audio past startAudioTime to fade), so it's capped there.
+    const bridgeSec = this.startAudioTime - now;
+    const fadeOutStart = this.startAudioTime - Math.min(HANDOFF_FADE_OUT_SEC, bridgeSec);
+    const gain = this.out.gain;
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(gain.value, now);
+    gain.setValueAtTime(gain.value, fadeOutStart);
+    gain.linearRampToValueAtTime(HANDOFF_FLOOR, this.startAudioTime);
+    gain.linearRampToValueAtTime(1, this.startAudioTime + HANDOFF_FADE_IN_SEC);
+
+    // Schedule the incoming seed's first (forward-anchored) batch immediately;
+    // the running pump worker then extends it on its normal cadence.
+    this.pumpOnce();
   }
 
   /** Subscribe to `tick` events for UI (e.g. driving an ember pulse). */
