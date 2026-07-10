@@ -97,6 +97,34 @@ seed-varying. Extending it: which voicing archetypes are reachable,
 which altered-dominant colors exist in this seed's vocabulary, etc.
 Identity-by-vocabulary-selection on top of identity-by-trajectory.
 
+## Where to clamp: constants, not paths (added 2026-07-09)
+
+A cross-cutting rule for *which* dimensions carry per-seed distinctness by
+**restriction** (clamped operating region, §2) vs. by **roaming**. It resolves
+the ergodicity problem (line ~57) without trading away within-seed variety —
+which matters because the dominant use case is one seed left on for hours, so
+*within*-seed monotony is a worse sin than *cross*-seed similarity.
+
+- **Path dimensions** — traversed over time (arrangement state, chord activity,
+  the fBm streams). Clamping these to a sub-region buys cross-seed distinctness
+  but *causes repetition* (the seed cycles the same restricted set for hours).
+  So keep them **roaming** (full traversal, per-seed *weighting/tilt* only), and
+  accept mild ergodicity as the correct price for a journey dimension.
+- **Constant dimensions** — a fixed per-seed backdrop you don't traverse
+  (**timbre**, and §4 mix/orchestration bias). Clamping these is **pure win**:
+  anti-ergodic *for free* (a constant never converges) with *zero repetition
+  cost* (you don't tire of a consistent voice — it's "who's playing"), and
+  audible in *every* state (even a generic `deep-breather` still sounds like
+  this seed via its timbre).
+
+Implication: **per-seed fixed timbre is the strongest un-exploited identity
+lever** — the biggest dimension where every seed is currently identical, and
+the one place hard clamping is unambiguously good. Load the anti-ergodic burden
+there (and on §4), not onto the path dimensions. Caveat — don't rely on timbre
+*alone*, or seeds become "same track, different piano" (violates principle 2's
+"different *place*"); it's a portfolio: fixed timbre as the strong anchor, path
+dimensions still contributing journey-distinctness by soft weighting.
+
 ## Explicitly rejected patterns
 
 ### Per-seed fixed value knobs (stair-step) — *with one carve-out*

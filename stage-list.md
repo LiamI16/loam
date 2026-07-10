@@ -144,42 +144,41 @@ sorted after the pad notes; falls outside the first-6 lock window).
 
 ### 1. Arrangement controller — phrase structure + dropouts + silences
 
-The engine has no concept of "8-bar phrase" or "16-bar section." All
-instruments play continuously; nothing ever drops out. Real lofi
-tracks *breathe* — sometimes 8 bars of pad + melody only (drums out),
-sometimes drums + bass alone, sometimes everything but kick steps
-out. The coming-and-going *is* the variation; you don't need to
-change what each instrument plays as much as you need to change
-whether it plays. This is the biggest "tech demo vs. music" tell.
+The engine plays every instrument continuously; nothing drops out —
+the biggest "tech demo vs. music" tell. Real lofi *breathes*.
 
-**Bundle (new module + engine wiring):**
-- Phrase counter on `EngineState` (current bar within the active
-  N-bar phrase).
-- New `ArrangementController` that decides per phrase which
-  instruments are active. Sub-schedulers respect the active mask
-  (emit no events when muted).
-- Smooth handoffs at phrase boundaries (no mid-phrase mutes).
-- Genuine silences allowed (the engine *can* go to just pad + crackle
-  or just pad for short windows).
+**Design SETTLED 2026-07-09 — full spec + decision log in
+[docs/arrangement.md](docs/arrangement.md). Ready for one-shot
+implementation.** Summary of A–F:
 
-**Now unblocked:** required drums + bass + melody to be in their
-final form — all three are.
+- **A2 mask-aware schedulers** (interactive, not subtractive-only):
+  `ArrangementController` runs first in `scheduleUntil`, writes a phrase
+  clock + active-mask to `EngineState`; each scheduler reads it (gate +
+  gentle adapt).
+- **Flat 8-bar phrase grid**; changes land only on boundaries.
+- **C1 discrete arrangement-state Markov machine** — curated 8-state
+  palette (`FULL`…`deep-breather`), pad-only floor, single-instrument
+  moves, energy-contour-tilted, ~1–2 min dwell.
+- **Three per-seed axes:** frequency (restlessness), presence-bias
+  (which instruments) — both **soft weightings, not clamps** — and depth
+  (mildly coupled to calm/busy). See seed-identity note below.
+- **Flagship coupling:** subtle melody space-fill when the beat/harmony
+  thins.
+- **Re-entry:** natural cuts (pad-floor makes tails a non-issue);
+  melody re-enters with a fresh germ phrase.
+- **Fingerprint PRESERVED** (open-at-`FULL` + named seed children) —
+  non-breaking additive change, no §7.3a break.
 
-**Cut the seam first (2026-07-09 arch review).** `ember.ts` has no
-shared per-scheduler lifecycle hook, so "every sub-scheduler reads the
-mask" = N hand-edited sites. Resolve one design question in
-`docs/arrangement.md` before coding: **suppress muted events at the
-composition point in `ember.ts`** (filter each scheduler's returned
-events by channel against the mask — one-file change, schedulers still
-advance internal state so phrases stay aligned; recommended, likely
-sufficient for "drums out for 8 bars") **vs. mask-aware schedulers**
-(only if smooth phrase-boundary handoffs require a scheduler to not
-start a phrase it can't finish). `EngineState` is the existing
-blackboard (`chordSchedule` already flows Chord→Bass) — add the phrase
-counter + active-mask there.
+**Seed-identity caveat:** arrangement is a *path* dimension — clamping
+it per-seed would cause within-seed repetition, so it stays soft-weighted
+and accepts mild ergodicity. Cross-seed anti-ergodic distinctness belongs
+on *constant* dimensions (per-seed **timbre**, §4 mix) instead — see
+`docs/seed-identity.md` "Where to clamp: constants, not paths" and the
+Timbre-swaps backlog note.
 
-**Files:** new `docs/arrangement.md` (design pass first),
-`arrangement-controller.ts`, `ember.ts` wiring.
+**Files:** `arrangement-controller.ts` (new), `ember.ts` (EngineState +
+composition-point mask filter + controller first), every `*-scheduler.ts`
+(read mask), melody scheduler (space-fill + fresh re-entry), seed children.
 
 ---
 
@@ -718,8 +717,22 @@ timbre) that fills silences when the main melody is out adds the
 the main melody's silences, which only become meaningful gaps after
 melodies have motifs + sustain instead of constant noodling).
 
+**Bigger than a second voice — per-seed *fixed timbre* is a primary
+identity lever (2026-07-09).** Today every seed uses the *identical*
+Rhodes/pad/bass/drum voices — the largest dimension where all seeds
+are the same, and likely the biggest driver of "seeds sound similar
+over long timescales." Timbre is a *constant* (backdrop) dimension, so
+per-seed variation there is anti-ergodic *for free* with zero
+repetition cost (see `docs/seed-identity.md` "Where to clamp: constants,
+not paths"). Scope this stage to also draw **per-seed timbre character**
+(e.g. FM harmonicity / modulation-index / envelope shape offsets on the
+keys + pad), not just add a second patch — it's higher-leverage for
+cross-seed distinctness than the path-dimension work (arrangement,
+etc.), and audible in every arrangement state including sparse ones.
+
 **Files:** `chains/lofi.ts`, new `counter-melody-scheduler.ts`,
-`channels.ts`, `ember.ts`.
+`channels.ts`, `ember.ts`, plus per-seed timbre draws (new seed
+children; adapter reads via params or construction).
 
 ---
 
