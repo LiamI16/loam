@@ -591,6 +591,22 @@ layer after melody + arrangement work lands.
 3. Per-seed activity↔slot-length coupling. First exercise of
    seed-identity.md §3 (couplings — the unused layer of the
    framework).
+4. **Per-seed *stationary reweight*, not more Dirichlet (added
+   2026-07-09, from the arrangement design).** The root cause above is
+   that Dirichlet-perturbing the matrix drifts the *stationary* back
+   toward universal base. The arrangement controller solves the same
+   problem correctly: reweight the target stationary π per seed and
+   construct the matrix to hit it *exactly* (there, via
+   Metropolis-Hastings) — no Dirichlet, no drift. See
+   `docs/arrangement.md` "No Dirichlet-on-matrix layer." **Caveat for
+   chords specifically:** the chord matrix is hand-authored with
+   deliberate transition *character* (calm gravity, transitional
+   call-response, broad AC-exit) that plain MH-from-stationary would
+   flatten — so the backport isn't a clean swap; it needs a
+   construction that hits a per-seed stationary *while preserving* that
+   asymmetry (iterative reweight of the authored matrix, not MH). Also
+   a fingerprint break. This is the *preferred technique* when this
+   work is picked up, superseding option 2's Dirichlet-spike approach.
 
 **Files when picked up:** `chord-scheduler.ts` (seed-children
 draws), `comping-patterns.ts` (parameter on `selectNextPattern`).

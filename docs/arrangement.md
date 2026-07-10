@@ -106,13 +106,16 @@ _(all questions resolved — see decision log)_
   (2026-06-19). Guarantees fall out structurally: legal floor (illegal combos
   aren't in the palette), single-instrument changes (transitions only between
   adjacent states differing by one instrument), purposeful stickiness
-  (self-loop weights). **Per-seed identity = the seed sets the weights**, via
-  Dirichlet perturbation of a universal base matrix (not free/categorical) plus
-  a per-seed per-instrument **presence-bias vector** mapping onto state weights
-  — so per-instrument personality (this seed's drums are often absent) emerges
-  from C1's weighting, capturing C2's benefit without its illegal-combo /
-  scene-cut risk. Chosen over C2 (independent per-instrument presence), which
-  reintroduces the random-feel + floor-policing we already paid to remove.
+  (self-loop weights). **Per-seed identity = the seed sets the weights**, via a
+  per-seed per-instrument **presence-bias vector** that reweights the base
+  stationary π (see Implementation numerics) — so per-instrument personality
+  (this seed's drums are often absent) emerges from C1's weighting, capturing
+  C2's benefit without its illegal-combo / scene-cut risk. Chosen over C2
+  (independent per-instrument presence), which reintroduces the random-feel +
+  floor-policing we already paid to remove. *(Realization refined 2026-07-09:
+  presence-bias reweights π directly — exact per-seed stationary — rather than
+  Dirichlet-perturbing the matrix, which would drift the stationary; see
+  Implementation numerics "No Dirichlet-on-matrix layer".)*
 - **C.2 → pad-only floor + 8-state palette**, 2026-07-09. Pad is the always-on
   harmonic anchor (brown bed + crackle also always-on, uncontrolled); bass /
   chords / melody / drums are arrangement-controlled. Palette (pad implicit):
@@ -185,3 +188,184 @@ _(all questions resolved — see decision log)_
   breathe ~26 s in). Seed-derived sparse openings (a nicety) would break the
   fingerprint and were rejected as not worth it. **Update the stale "will break
   fingerprint" notes** in `stage-list.md` / `CLAUDE.md`-adjacent references.
+
+---
+
+# Implementation numerics + plan (settled 2026-07-09)
+
+Concrete spec for a one-shot build. Values marked **[taste]** are the
+judgment dials worth a sanity-check; **[ear]** are placeholder-then-`listen-check`;
+the rest are structural / template-derived. Template throughout:
+`harmony/comping-patterns.ts` + `harmony/dirichlet.ts` (`perturbDirichlet`).
+
+## States, fullness, base weights
+
+8 states, indexed; bits = (bass, chords, melody, drums), pad implicit-always:
+
+| idx | state | bits | fullness | base π **[taste]** |
+|---|---|---|---|---|
+| 0 | `FULL` | 1111 | 1.00 | 0.30 |
+| 1 | `no-melody` | 1101 | 0.75 | 0.14 |
+| 2 | `drums-out` | 1110 | 0.75 | 0.14 |
+| 3 | `pocket` | 1001 | 0.50 | 0.10 |
+| 4 | `warm` | 1100 | 0.50 | 0.10 |
+| 5 | `bass-breather` | 1000 | 0.25 | 0.09 |
+| 6 | `lead-breather` | 0010 | 0.25 | 0.08 |
+| 7 | `deep-breather` | 0000 | 0.00 | 0.05 |
+
+π sums to 1.0. Distribution ≈ 58 % present (3–4 inst), 20 % mid, 17 % sparse,
+5 % near-silent. `fullness` = active-instrument count / 4 (energy-tilt input,
+the analogue of `PATTERN_ACTIVITY`).
+
+**Adjacency** (single-instrument moves; verified connected):
+`0:[1,2] 1:[0,3,4] 2:[0,4] 3:[1,5] 4:[1,2,5] 5:[3,4,7] 6:[7] 7:[5,6]`
+
+## Transition matrix — construction (not hand-authored)
+
+Build deterministically via **Metropolis-Hastings** on the adjacency graph so
+the stationary distribution is exactly the (per-seed presence-biased) π — no
+hand-tuned 8×8, no power-iteration:
+
+1. Proposal `q_ij = 1/deg(i)` for neighbours `j`.
+2. Acceptance `a_ij = min(1, (π_j·deg(i)) / (π_i·deg(j)))`.
+3. `P_ij = q_ij·a_ij` (j≠i); `P_ii = 1 − Σ_{j≠i} P_ij`. Detailed balance holds
+   by construction → stationary = π.
+
+Then **per-seed laziness λ** (frequency axis): `P' = λ·I + (1−λ)·P`. A lazy
+chain keeps the same stationary π but lengthens dwell. λ ∈ **[0.5, 0.86]
+[taste]** drawn from `arrangement-frequency` → dwell ≈ **65 s … 4 min**
+(restless → stable). Dwell in state i = 1/((1−λ)(1−P_ii)).
+
+**No Dirichlet-on-matrix layer** (deliberate divergence from chord-comping,
+2026-07-09 — flagged by "is base π prone to the same Dirichlet drift?").
+Dirichlet-perturbing the transition rows moves the *realized* stationary off
+the intended π' — the exact drift chord-comping documents as an identity
+*weakener* ("mixes toward a stationary closer to the universal base"). We don't
+need it: per-seed identity is carried **exactly** by the presence-biased π'
+(which-instruments + time-distribution — and since MH makes the matrix a
+deterministic function of π', different seeds already get genuinely different
+transition shapes) and by λ (dwell); both preserve the stationary exactly.
+Adding Dirichlet would only smear that with uncontrolled drift. Arrangement is
+therefore drift-free where chord-comping is not.
+
+## Energy contour + tilt
+
+- One universal `Fbm1D` (`arrangement-energy-fbm`), slowest octave **~4 min**
+  (`arrangement-energy-config`; octaves like the bass-stickiness drift). Per-seed
+  identity here is only the fBm *phase* (different child) — range is universal
+  (C.3: contour is timing, not per-seed amount).
+- Map contour → `target ∈ [0,1]` fullness. At each phrase transition, tilt the
+  current matrix row by `exp(−K·|fullness_j − target|)`, K=**2 [taste]** (gentle,
+  cf. chord-comping K=3), renormalise, sample next state. Same selection-time
+  tilt shape as `selectPattern`.
+
+## Per-seed axes (draws)
+
+- **Presence-bias** `b = (bass, chords, melody, drums)` (`arrangement-presence-bias`).
+  Each component drawn **log-uniform, multiplicatively symmetric around 1.0** —
+  `b = exp(u·ln M)`, `u ~ uniform[−1, 1]`, **`M = 1.6`** (range ≈ [0.63, 1.6];
+  validated — see below); **melody uses a smaller downside** (`u ~
+  uniform[−0.4, 1]`, floor ≈ 0.83) — signature-protect
+  guardrail, never systematically hide the germ. Applied as a *soft reweight of
+  π before MH*: `π'_s = π_s · Π_{inst active in s} b_inst`, renormalised. Soft
+  weighting, **NOT a clamp** — all states stay reachable (see seed-identity
+  "clamp constants, not paths"). *(v1 uses uniform-in-log; a later refinement
+  could concentrate most seeds near neutral with rare strongly-biased ones — a
+  [taste] dial, deferred.)*
+- **Depth coupling** (mild, §3): `target += k·(activityMean − 0.5)`, k=**0.15
+  [taste]** — busy seeds hug fuller. Deliberately weak; may ship at k=0 for v1
+  and add later.
+
+## Space-fill coupling (flagship, [ear])
+
+When the active state thins the beat/harmony but keeps melody — states
+`drums-out`, `warm`(no melody→n/a), `bass-breather`(no melody→n/a) — i.e. states
+where melody is present AND (drums OR chords absent): multiply the melody
+scheduler's activity target by **SPACE_FILL ≈ 1.2 [ear]**. Subtle bias on the
+existing F1 coupling, never an override. (Only `drums-out` qualifies among
+melody-present states with something removed — plus `FULL`-minus edge cases;
+keep the rule "melody present + not FULL → mild lift".)
+
+## Mechanism refinement — hybrid, minimal scheduler surface
+
+Muting is done by a **composition-point filter** in `ember.ts` (the A1
+mechanism): drop note events whose channel maps to a muted role. Only **melody**
+is made mask-aware (the A2 part) — for space-fill + fresh re-entry. So *four*
+schedulers stay untouched; only melody is edited. Channel→role map:
+`RHODES_CHORD→chords, RHODES_MELODY→melody, BASS→bass, KICK/SNARE/HAT→drums`;
+`PAD/BELL(crackle)/ticks/params` always pass.
+
+## Seed children (named — fingerprint-safe)
+
+`arrangement-presence-bias`, `arrangement-frequency`,
+`arrangement-energy-fbm`, `arrangement-energy-config`. Named ⇒ existing
+schedulers' RNG untouched.
+
+## Validation results (offline, 2000 seeds, 2026-07-09)
+
+Ranges were **measured before build**, not asserted — arrangement character is
+pure seed-math (no audio). Harness: `packages/core/scripts/arrangement-validate.ts`
+(reusable seed-distinctness metric — the tool the Fable review said we lacked).
+Run: `node --experimental-strip-types packages/core/scripts/arrangement-validate.ts`
+(build `@loam/core` first). All at the final ranges (M=1.6, λ∈[0.5,0.86], base π):
+
+- **Change frequency** (mean time between any state change): median **~2.1 min**
+  @74 BPM; p5–p95 spread **82 s … 260 s** (restless → stable seeds). On the
+  ~1–2 min target. → **λ∈[0.5,0.86] validated.**
+- **Cross-seed distinctness** (fraction of time each instrument present, across
+  seeds): drums [0.43, 0.65], chords [0.57, 0.79], melody [0.47, 0.64], bass
+  [0.78, 0.93]; mean pairwise L1 = 0.25. Meaningful per-seed variation (a
+  "drummy" seed ~65 % vs a "light" one ~43 %). Bass is near-invariant (~87 %,
+  foundational — barely an identity axis, as expected). → **M=1.6 chosen by
+  sweep**: bumped from an initial 1.4 (L1 0.18) because 1.4 read too timid;
+  1.6 gives ~40 % more spread while staying safe. M≥1.8 starts producing
+  "half-time-in-one-state" seeds — the degeneracy ceiling.
+- **No degeneracy**: worst single-state occupancy **0.47** (most extreme seed
+  still breathes 53 % of the time); time-at-`FULL` [0.23, 0.41], time-at-
+  `deep-breather` [0.02, 0.08]. No stuck/broken seeds.
+- **Zero drift**: stationary-vs-π' L1 error **~9e-14** — confirms the
+  presence-bias-not-Dirichlet design gives each seed its *exact* target
+  distribution (the whole point of dropping Dirichlet).
+
+Still ear-only (step 6): whether breathing *feels motivated* (contour→mask),
+space-fill subtlety, and the base-π *feel* (structurally it yields 32 % `FULL`
+/ 5 % near-silent / ~58 % present — sound, but "right amount" is taste).
+
+## Build sequence
+
+1. **`EngineState` fields** — `phraseBar: number`, `arrangementMask: Set<Role>`
+   (or a 4-bool record). Palette + adjacency + fullness + base π as module data
+   in `arrangement-controller.ts`.
+2. **`ArrangementController` skeleton** — construct with seed children; expose
+   `advance(engineFrom, engineUntil)` that maintains the phrase-bar clock;
+   **initial state = `FULL`**; for now always writes `FULL` mask (no walk yet).
+3. **Wire into `ember.ts`** — construct controller; call `advance` *first* in
+   `scheduleUntil` (before chords); apply the composition-point mask filter to
+   `raw`. **Gate: `pnpm test` — `ember-engine.test.ts` fingerprint MUST be
+   unchanged** (open-at-`FULL` + named children + FULL-mask = no-op). This is
+   the fingerprint-safety checkpoint before any behaviour lands.
+4. **Numerics** — presence-biased π', MH matrix construction, λ laziness,
+   energy contour + tilt (no Dirichlet). Unit-test: stationary of the
+   constructed `P'` ≈ π' **exactly** (power-iteration assertion — should hold to
+   tight tolerance since no Dirichlet drift); dwell in range; all states
+   reachable. Phrase boundary → walk picks next state → mask.
+5. **Melody mask-awareness** — read `arrangementMask` from `EngineState`:
+   fresh germ phrase on muted→active edge; space-fill activity lift when
+   melody-present-and-not-`FULL`.
+6. **`listen-check`** on several seeds incl. dense — confirm: breathing feels
+   *motivated* (contour-driven, not random — the chord-Markov lesson), dwell
+   reads ~1–2 min, no popping, space-fill stays subtle, seeds breathe
+   distinctly. Tune `[taste]`/`[ear]` dials.
+7. **Close-out** — fingerprint moves *only if* step 3's guarantee is somehow
+   broken (it shouldn't); document, update stage-list, collapse this doc to a
+   decision-record per the documentation-procedure.
+
+## Acceptance
+
+- Fingerprint unchanged (step 3 checkpoint holds through the build).
+- Constructed matrix's stationary ≈ presence-biased π (unit test).
+- Dwell ~1–2 min at default λ; every state reachable from every state.
+- Only `ember.ts`, `arrangement-controller.ts`, `melody-scheduler.ts`,
+  `EngineState`, and seed-children touched — bass/chords/drums schedulers
+  unedited.
+- Ear: motivated, non-popping, subtle space-fill, distinct per-seed breathing.
