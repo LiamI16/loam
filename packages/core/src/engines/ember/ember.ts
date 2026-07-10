@@ -1,9 +1,16 @@
+import { Channels } from '../../channels.js';
 import type { Engine } from '../../engine.js';
 import type { EngineEvent, ParamEvent, TickEvent } from '../../events.js';
 import { Fbm1D } from '../../noise/fbm.js';
 import { FbmParam, type ParamStream, StaticParam } from '../../params/param-stream.js';
 import { PositionStream } from '../../params/position-stream.js';
 import type { Seed } from '../../rng/seed.js';
+import {
+  ArrangementController,
+  type ArrangementMask,
+  FULL_MASK,
+  type Role,
+} from './arrangement-controller.js';
 import { BassScheduler } from './bass-scheduler.js';
 import { ChordScheduler } from './chord-scheduler.js';
 import { CrackleScheduler } from './crackle-scheduler.js';
@@ -69,6 +76,15 @@ export interface EngineState {
    * parameter landscape. Consumers read coords per emission and map to
    * whatever musical surface they bias. */
   position: PositionStream;
+  /** Arrangement (docs/arrangement.md). Current bar within the active
+   * 8-bar phrase (0..7), maintained by `ArrangementController`. */
+  phraseBar: number;
+  /** Active-role mask at a given engine-time, written by
+   * `ArrangementController`. Phrase-accurate: mutes/unmutes land only on
+   * 8-bar boundaries. `MelodyScheduler` reads it for space-fill + fresh
+   * re-entry; the composition-point filter reads it to drop muted channels.
+   * A FULL mask (the open-at-`FULL` default) is a no-op for every reader. */
+  arrangementMaskAt(time: number): ArrangementMask;
 }
 
 /** What sub-schedulers do — emit events in `[from, to)`. */
@@ -114,6 +130,7 @@ export class EmberEngine implements Engine {
   private readonly drums: DrumScheduler;
   private readonly melody: MelodyScheduler;
   private readonly crackle: CrackleScheduler;
+  private readonly arrangement: ArrangementController;
   /** Stage 7b listen-distance streams. Emit-only — sub-schedulers don't
    * read these, so they live on the engine rather than in `EngineState`.
    * (Reverb wet was originally a third stream here but dropped post-
@@ -164,6 +181,11 @@ export class EmberEngine implements Engine {
       chordActivityStream: new StaticParam(0.5),
       structuralMomentTimes: [],
       position,
+      // Arrangement fields. Placeholders until the controller (constructed
+      // below) overwrites `arrangementMaskAt`; the default is FULL so any
+      // read before construction is a harmless no-op.
+      phraseBar: 0,
+      arrangementMaskAt: () => FULL_MASK,
       // Evo-filter cutoff mean matches the prototype's static initial
       // value (1800 Hz). Range guards against the filter ever going
       // negative or above a reasonable cutoff.
@@ -181,6 +203,14 @@ export class EmberEngine implements Engine {
     this.drums = new DrumScheduler(seed.child('drums'), this.state);
     this.melody = new MelodyScheduler(seed.child('melody'), this.state);
     this.crackle = new CrackleScheduler(seed.child('crackle'), this.state);
+
+    // Arrangement controller. Named seed children keep existing schedulers'
+    // RNG untouched; open-at-FULL keeps the fingerprint (decision F). Wires
+    // `state.arrangementMaskAt` in its constructor.
+    // Root seed (not a child): the `arrangement-*` children are named off
+    // the root, matching the offline-validated ranges in
+    // scripts/arrangement-validate.ts.
+    this.arrangement = new ArrangementController(seed, this.state, 60 / bpm);
 
     // Stage 7b: listen-distance fBm streams. Each gets its own seed
     // child for both noise signal and per-seed liveliness config, so
@@ -215,6 +245,11 @@ export class EmberEngine implements Engine {
     const engineFrom = this.engineCursor;
     const engineUntil = engineFrom + (until - audioFrom) * mult;
 
+    // ArrangementController runs first (pre-scheduler): advance the phrase
+    // clock and pre-warm phrase-state decisions for this window before any
+    // sub-scheduler reads the mask.
+    this.arrangement.advance(engineFrom, engineUntil);
+
     // ChordScheduler runs first — it populates state.chordSchedule
     // which BassScheduler reads.
     const chordEvents = this.chords.scheduleUntil(engineFrom, engineUntil);
@@ -229,12 +264,23 @@ export class EmberEngine implements Engine {
       ...this.emitContinuousParams(engineFrom, engineUntil),
     ];
 
+    // Composition-point mask filter (docs/arrangement.md "Mechanism
+    // refinement"): drop note events whose channel maps to an
+    // arrangement-muted role at their engine-time. Pad / crackle / ticks /
+    // params always pass; a FULL mask drops nothing (fingerprint-safe).
+    const filtered = raw.filter((ev) => {
+      if (ev.kind !== 'note') return true;
+      const role = channelRole(ev.channel);
+      if (role === null) return true;
+      return this.arrangement.maskAt(ev.time).has(role);
+    });
+
     // Map engine-time events to audio-time. `time` of an event scales
     // linearly; `durationMs` and `rampMs` scale the same way (a half-
     // speed engine produces notes that sustain twice as long in wall
     // time). At mult=1.0 this is the identity, so locked-sequence tests
     // remain valid.
-    const scaled: EngineEvent[] = raw.map((ev) => {
+    const scaled: EngineEvent[] = filtered.map((ev) => {
       const audioTime = audioFrom + (ev.time - engineFrom) / mult;
       if (ev.kind === 'note') {
         return { ...ev, time: audioTime, durationMs: ev.durationMs / mult };
@@ -261,6 +307,7 @@ export class EmberEngine implements Engine {
     this.drums.reset();
     this.melody.reset();
     this.crackle.reset();
+    this.arrangement.reset();
   }
 
   /**
@@ -360,6 +407,26 @@ export class EmberEngine implements Engine {
       tickTime = tickIdx * PARAM_TICK_SEC;
     }
     return events;
+  }
+}
+
+/** Map a note channel to the arrangement role that gates it, or `null` for
+ * always-on channels (pad, crackle bell). Drums are a unit for v1. See
+ * docs/arrangement.md "Mechanism refinement" (channel→role map). */
+function channelRole(channel: string): Role | null {
+  switch (channel) {
+    case Channels.BASS:
+      return 'bass';
+    case Channels.RHODES_CHORD:
+      return 'chords';
+    case Channels.RHODES_MELODY:
+      return 'melody';
+    case Channels.KICK:
+    case Channels.SNARE:
+    case Channels.HAT:
+      return 'drums';
+    default:
+      return null;
   }
 }
 

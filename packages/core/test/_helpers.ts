@@ -15,5 +15,9 @@ export function makeState(
     chordActivityStream: new StaticParam(opts.chordActivity ?? 0.35),
     structuralMomentTimes: [],
     position: new PositionStream(seed.child('position'), { baseFreq: 0.002, octaves: 3 }),
+    // Arrangement defaults to FULL (all roles present) so sub-scheduler
+    // unit tests see today's always-on behaviour.
+    phraseBar: 0,
+    arrangementMaskAt: () => new Set(['bass', 'chords', 'melody', 'drums']),
   };
 }

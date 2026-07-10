@@ -4,6 +4,7 @@ import { Fbm1D } from '../../noise/fbm.js';
 import { FbmParam } from '../../params/param-stream.js';
 import type { Rng } from '../../rng/rng.js';
 import type { Seed } from '../../rng/seed.js';
+import { ROLES } from './arrangement-controller.js';
 import type { EngineState, SubScheduler } from './ember.js';
 import {
   type ChordSymbol,
@@ -168,6 +169,17 @@ const OFFBEAT_EPSILON = 1e-9;
 const JITTER_RANGE_MS = 7;
 const JITTER_RANGE_SEC = JITTER_RANGE_MS / 1000;
 
+/** Space-fill coupling (docs/arrangement.md decision D, flagship). When the
+ * arrangement thins the beat/harmony but keeps the lead (melody present and
+ * the state isn't FULL), the melody leans *slightly* more present — a gentle
+ * multiplier on the F1 activity target, never an override. Placeholder value
+ * pending step-6 `listen-check` tuning. [ear] */
+const SPACE_FILL = 1.2;
+
+/** Number of arrangement-controlled roles — a mask of this size is `FULL`
+ * (no instrument removed), so space-fill only applies below it. */
+const ROLE_COUNT = ROLES.length;
+
 export class MelodyScheduler implements SubScheduler {
   private rng!: Rng;
   private emissionRng!: Rng;
@@ -202,6 +214,11 @@ export class MelodyScheduler implements SubScheduler {
   /** Per-emission timing jitter rng. Drawn from `melody-jitter` seed
    * child so jitter doesn't perturb other rng streams' sequences. */
   private jitterRng!: Rng;
+  /** Arrangement re-entry latch: true while the melody role is muted, so the
+   * next active phrase re-enters with a *fresh germ phrase* on the downbeat
+   * rather than mid-fragment (docs/arrangement.md decision E). Always false
+   * for a seed that never mutes melody — a no-op at `FULL`. */
+  private wasMuted = false;
 
   constructor(
     private readonly seed: Seed,
@@ -279,6 +296,7 @@ export class MelodyScheduler implements SubScheduler {
   reset(): void {
     this.nextQuarter = 1;
     this.buffer = [];
+    this.wasMuted = false;
     this.rng = this.seed.rng();
     this.emissionRng = this.seed.child('melody-emission').rng();
     this.transformationRng = this.seed.child('melody-transformation').rng();
@@ -291,7 +309,31 @@ export class MelodyScheduler implements SubScheduler {
     const events: EngineEvent[] = [];
     while (this.nextQuarter * this.secondsPerBeat < to) {
       const time = this.nextQuarter * this.secondsPerBeat;
-      const effective = this.effectiveActivity(time);
+      const mask = this.state.arrangementMaskAt(time);
+      if (!mask.has('melody')) {
+        // Arrangement muted the lead this phrase: emit nothing (the
+        // composition-point filter also drops any melody events, but
+        // gating here keeps the germ from developing while silent) and
+        // arm the fresh-re-entry latch. No RNG consumed → the mute is a
+        // clean seam; at `FULL` this branch never fires.
+        this.wasMuted = true;
+        this.nextQuarter++;
+        continue;
+      }
+      if (this.wasMuted) {
+        // Muted→active edge: re-enter with a fresh germ phrase on the
+        // downbeat rather than resuming a mid-fragment shape. Also moots
+        // germ-development-while-muted (decision E).
+        this.wasMuted = false;
+        this.buffer = [];
+        const advanceBeats = this.emitGerm(events, time, this.germ);
+        this.nextQuarter += Math.max(1, Math.ceil(advanceBeats));
+        continue;
+      }
+      // Space-fill (decision D): melody present but the state isn't FULL →
+      // lean slightly more present. Subtle bias on F1, never an override.
+      let effective = this.effectiveActivity(time);
+      if (mask.size < ROLE_COUNT) effective = Math.min(1, effective * SPACE_FILL);
       // Determinism discipline: always consume the fire + rule rolls
       // regardless of fire outcome; per-note velocity and fresh rolls
       // are only consumed inside the fire branch (their count varies
