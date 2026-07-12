@@ -107,6 +107,46 @@ const ENERGY_TILT_K = 2;
  */
 const DEPTH_COUPLING_K = 0;
 
+/**
+ * Max contiguous melody absence before the walk is *forced* back toward a
+ * melody-present state. Melody is the signature/interest layer — occasional
+ * dropouts are fine (low frequency is welcome), but without it the track goes
+ * mundane, so no single absence may run long. The soft presence-bias floor
+ * only bounds the *fraction* of melody time, not the *contiguous run*; a slow
+ * energy-contour trough can otherwise pin the walk in the (large, connected)
+ * melody-absent cluster for 10+ min (found by listen-check on the first
+ * implementation, 2026-07-09). ~110 s ≈ ≤2 min at typical tempo; converted to
+ * whole phrases per-seed from `phraseDuration`. [ear]-tunable downward. */
+const MAX_MELODY_ABSENCE_SEC = 110;
+
+const MELODY_IDX = ROLES.indexOf('melody');
+
+/** BFS distance from each state to the nearest melody-present state, over the
+ * single-instrument-move adjacency graph. Used by the refractory to force the
+ * distance-reducing move. Max is 2 (every absent state is ≤2 moves away). */
+const DIST_TO_MELODY: readonly number[] = (() => {
+  const dist = STATES.map(() => Number.POSITIVE_INFINITY);
+  const queue: number[] = [];
+  STATES.forEach((s, i) => {
+    if (s.bits[MELODY_IDX]) {
+      dist[i] = 0;
+      queue.push(i);
+    }
+  });
+  while (queue.length > 0) {
+    const cur = queue.shift() as number;
+    for (const nb of ADJACENCY[cur] as readonly number[]) {
+      if ((dist[nb] as number) > (dist[cur] as number) + 1) {
+        dist[nb] = (dist[cur] as number) + 1;
+        queue.push(nb);
+      }
+    }
+  }
+  return dist;
+})();
+
+const MAX_DIST_TO_MELODY = Math.max(...DIST_TO_MELODY);
+
 /** Build a mask (active-role set) from a state's bits. */
 function maskFromBits(bits: readonly [number, number, number, number]): ArrangementMask {
   const set = new Set<Role>();
@@ -209,6 +249,8 @@ export class ArrangementController {
   private readonly energyPhase: number;
   private readonly barDuration: number;
   private readonly phraseDuration: number;
+  /** Melody-absence cap in phrases (from `MAX_MELODY_ABSENCE_SEC`). */
+  private readonly melodyCapPhrases: number;
   private walkRng: ReturnType<Seed['rng']>;
 
   /** Cached per-phrase state indices, computed lazily in order. Phrase 0 is
@@ -222,6 +264,10 @@ export class ArrangementController {
   ) {
     this.barDuration = 4 * secondsPerBeat;
     this.phraseDuration = PHRASE_BARS * this.barDuration;
+    this.melodyCapPhrases = Math.max(
+      MAX_DIST_TO_MELODY + 1,
+      Math.floor(MAX_MELODY_ABSENCE_SEC / this.phraseDuration),
+    );
 
     const bias = drawPresenceBias(seed);
     const pi = biasedStationary(bias);
@@ -271,14 +317,34 @@ export class ArrangementController {
     while (this.phraseStates.length <= k) {
       const idx = this.phraseStates.length;
       const prev = this.phraseStates[idx - 1] as number;
+      // Consecutive melody-absent phrases ending at `prev` (the state we walk
+      // from). Feeds the melody refractory in `walkNext`.
+      let melodyAbsentRun = 0;
+      for (
+        let i = idx - 1;
+        i >= 0 && !(STATES[this.phraseStates[i] as number] as ArrangementStateDef).bits[MELODY_IDX];
+        i--
+      ) {
+        melodyAbsentRun++;
+      }
       const boundaryTime = idx * this.phraseDuration;
-      this.phraseStates.push(this.walkNext(prev, boundaryTime));
+      this.phraseStates.push(this.walkNext(prev, boundaryTime, melodyAbsentRun));
     }
   }
 
   /** Sample the next state from the current transition row, tilted toward
-   * the energy contour's target fullness at `boundaryTime`. */
-  private walkNext(current: number, boundaryTime: number): number {
+   * the energy contour's target fullness at `boundaryTime`. Overridden by the
+   * melody refractory: once melody has been absent long enough that even a
+   * fastest (distance-reducing) return would hit the cap, force that return —
+   * this bounds contiguous melody absence to `melodyCapPhrases` regardless of
+   * the energy contour (a trough would otherwise pin the walk melody-out). */
+  private walkNext(current: number, boundaryTime: number, melodyAbsentRun: number): number {
+    if (
+      (DIST_TO_MELODY[current] as number) > 0 &&
+      melodyAbsentRun >= this.melodyCapPhrases - MAX_DIST_TO_MELODY
+    ) {
+      return this.forceTowardMelody(current);
+    }
     const target = this.energyTarget(boundaryTime);
     const row = this.matrix[current] as number[];
     const tilted: number[] = new Array(row.length).fill(0);
@@ -299,6 +365,38 @@ export class ArrangementController {
       if (roll < acc) return j;
     }
     return current;
+  }
+
+  /** Refractory move: pick a neighbour strictly closer to melody (BFS
+   * guarantees one exists at `dist−1`), sampled among the min-distance
+   * neighbours weighted by their base transition prob — so the return is
+   * directed but not deterministic. Consumes exactly one `walkRng` roll, like
+   * the normal path, keeping the RNG stream aligned. */
+  private forceTowardMelody(current: number): number {
+    const row = this.matrix[current] as number[];
+    let minDist = Number.POSITIVE_INFINITY;
+    for (let j = 0; j < row.length; j++) {
+      if (j !== current && (row[j] as number) > 0) {
+        minDist = Math.min(minDist, DIST_TO_MELODY[j] as number);
+      }
+    }
+    let sum = 0;
+    for (let j = 0; j < row.length; j++) {
+      if (j !== current && (row[j] as number) > 0 && DIST_TO_MELODY[j] === minDist) {
+        sum += row[j] as number;
+      }
+    }
+    const roll = this.walkRng.nextFloat();
+    let acc = 0;
+    let last = current;
+    for (let j = 0; j < row.length; j++) {
+      if (j !== current && (row[j] as number) > 0 && DIST_TO_MELODY[j] === minDist) {
+        last = j;
+        acc += (row[j] as number) / sum;
+        if (roll < acc) return j;
+      }
+    }
+    return last;
   }
 
   /** Map the slow energy fBm → target fullness ∈ [0, 1]. */

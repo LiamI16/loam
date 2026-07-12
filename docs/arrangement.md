@@ -1,5 +1,20 @@
 # Arrangement controller — design (ACTIVE)
 
+> **⚠️ STATUS 2026-07-11 — core model under reconsideration.** The
+> **occupancy-Markov** design below (decisions A–F, numerics) was implemented
+> and **failed listen-check**: instruments vanish for far too long (melody up
+> to 22 min; bed instruments a *median 71 min*, up to 8 h). Root cause is
+> fundamental — in an occupancy model **absence-duration = dwell-duration**,
+> and the 1/f energy contour has unbounded low-excursions, so *any* occupancy
+> model (Markov, density-threshold, full-connectivity — all tested) has
+> unbounded absence. Bounded absence is a hard requirement (melody feedback),
+> so we are evaluating an **event/dropout model** (bounded departures on a full
+> baseline) and possibly **semi-Markov** (bounded sojourn times, which might
+> rescue the palette). A research phase is running → **`docs/arrangement-research.md`**.
+> Treat A–F + numerics as *superseded pending that decision*. Regression gate
+> for any approach: `packages/core/test/arrangement-absence.test.ts`
+> (measures contiguous absence — the metric the offline validation *missed*).
+>
 > Plan doc, active. The launch-critical feature: the engine currently plays
 > every instrument continuously and nothing ever drops out, which is the
 > biggest "tech-demo vs. music" tell. Real lofi *breathes* — 8 bars of pad +
