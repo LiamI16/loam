@@ -8,12 +8,20 @@
 > and the 1/f energy contour has unbounded low-excursions, so *any* occupancy
 > model (Markov, density-threshold, full-connectivity — all tested) has
 > unbounded absence. Bounded absence is a hard requirement (melody feedback),
-> so we are evaluating an **event/dropout model** (bounded departures on a full
-> baseline) and possibly **semi-Markov** (bounded sojourn times, which might
-> rescue the palette). A research phase is running → **`docs/arrangement-research.md`**.
-> Treat A–F + numerics as *superseded pending that decision*. Regression gate
-> for any approach: `packages/core/test/arrangement-absence.test.ts`
-> (measures contiguous absence — the metric the offline validation *missed*).
+> **Research resolved the direction (2026-07-11 → `docs/arrangement-research.md`):**
+> adopt an **event/dropout model = per-role alternating-renewal with a bounded
+> off-duration (hard absence cap) + a Cox process where the 1/f energy contour
+> modulates drop *rate/depth* but never *duration*.** Keep the curated 8-state
+> palette as a **legal-combo *filter*** (veto/resample), not the generator.
+> Musicality via serialization (≤1 change/boundary), hysteresis/min-dwell,
+> scheduled rare deep multi-drops, quantized crossfade + re-entry. Per-seed
+> identity = per-role `{rate, max duration/depth, hysteresis, favored-drop}`.
+> Semi-Markov was evaluated and **rejected** (per-state dwell caps don't bound
+> per-*instrument* absence). **Next: a design pass on the event-model specifics,
+> then re-implement.** Treat A–F + numerics below as *superseded* — but the
+> palette, the per-seed axes, and the regression gate
+> (`packages/core/test/arrangement-absence.test.ts`, measures contiguous
+> absence — the metric the offline validation *missed*) all carry forward.
 >
 > Plan doc, active. The launch-critical feature: the engine currently plays
 > every instrument continuously and nothing ever drops out, which is the
