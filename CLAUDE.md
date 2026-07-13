@@ -113,6 +113,10 @@ to slow down, not speed up.
 
 - **`docs/` for design notes**, never the repo root. Only `.md` files
   allowed at root: `README.md`, `CLAUDE.md`, `stage-list.md`.
+- **`docs/internal/` is private** (gitignored — never committed): business /
+  monetization / strategy notes that must not ship in the public repo. The
+  public `docs/*.md` are technical design only. Put anything sensitive under
+  `docs/internal/`; never `git add -f` it.
 - **"Knob"** = seed-controlled parameter.
 - **Engine fingerprint** (`packages/core/test/ember-engine.test.ts`)
   pinned at `Seed.from(42n)` with `bpm: 74`. Any change that shifts
