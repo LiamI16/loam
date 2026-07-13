@@ -89,7 +89,11 @@ dominants? Three resolution paths to consider when Chord D lands:
 3. Scope-limit Chord D to the chord qualities that don't clash with
    pentatonic germs (drop the altered dominants).
 
-Decide before committing Chord D work.
+Decide before committing Chord D work. **Status 2026-07-12: Chord D
+deferred past launch** (genre-tension + this unresolved clash risk; current
+diatonic vocabulary sounds good). This question stays open — decide it *when*
+D is picked up. If pursued, path 3 (chromatic-approach-only, drop altered
+dominants) is the pre-vetted safe subset that sidesteps the clash entirely.
 
 ### Engine fingerprint test coverage hole
 The lock test asserts count `113` for `Seed.from(42n)` in `[0, 5s)`.

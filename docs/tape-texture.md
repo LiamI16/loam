@@ -669,6 +669,17 @@ rather than rediscover.
    stage is audibly more produced, not merely harmless, before leaning on it as
    a launch selling point.
 
+   **Resolved 2026-07-12.** Both halves ran: `scripts/tape-spectrum.ts` (real
+   chain, tape off vs on, seed-averaged band deltas vs the OFF-vs-OFF noise
+   floor) found the stage **spectrally near-transparent** — deltas on the order
+   of the nondeterministic-bed variance (a faint low-mid scoop + <1 dB squeeze;
+   the −72 dB hiss shelf doesn't clear the floor), so its audible character is
+   largely time-domain wow/flutter. The ear A/B agreed: **intentionally subtle,
+   effectively negligible** (the level was deliberately pulled down during
+   earlier tape troubleshooting). Decision: **keep as harmless character, do
+   NOT lean on it as a launch selling point.** Not a blocker. Revisit only if a
+   future pass wants the stage to do more — it's currently doing very little.
+
 3. **Bass-translation intent quietly dropped.** Decision A wanted bass *included*
    specifically to add harmonics a pure-sine bass lacks (small-speaker
    translation). It ships *excluded* — driven by the drive-5 mud gate, not by

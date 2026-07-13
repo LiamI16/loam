@@ -123,25 +123,31 @@ sorted after the pad notes; falls outside the first-6 lock window).
 
 ## Next up — pre-launch order of operations
 
-> **Publicity gate (2026-07-08).** UI tasks are complete and the
-> project is heading toward public release. Three musical items sit
-> between here and launch, ordered by first-listen impact (the tape
-> texture stage — the fourth item on this list originally — landed
-> 2026-07-08; see Done above). The paused sampler-character buzz is
-> *not* a blocker — it's gated behind link flags. Order below is
-> launch-priority, not architectural category:
+> **Publicity gate — CLEARED 2026-07-12.** All three musical items are
+> resolved; the launch gate is empty. History:
 >
-> 1. **Arrangement controller** — highest absolute impact (kills the
->    wall-of-sound sameness); more work but now unblocked (drums /
->    bass / melody are final).
-> 2. **Chord B** — envelope refinement; listen pass first, may need
->    nothing.
-> 3. **Chord D** — last / possibly defer past launch: blocked on the
->    `docs/gaps.md` vocabulary decision and carries genre-tension
->    risk.
+> 1. **Arrangement controller** — ✅ **shipped 2026-07-12** (A2
+>    event/dropout; the highest-impact item, killed the wall-of-sound
+>    sameness). See Done table + `docs/arrangement.md`.
+> 2. **Chord B** (envelope refinement) — ✅ **skipped, good enough
+>    2026-07-12.** Per-beat duration variation already shipped in Chord A
+>    (`HitSpec.durationBeats`); release 0.8 s + voicing variety (C) landed;
+>    the only unshipped piece (per-seed envelope shape) is a marginal
+>    identity knob that risks the delicate sustain-vs-bed balance. Listen
+>    pass passed. Revisit post-launch only if a seed reads as flat.
+> 3. **Chord D** (vocabulary expansion) — ⏸ **deferred past launch
+>    2026-07-12.** Altered dominants carry genre-tension + a real germ-clash
+>    blocker (`docs/gaps.md` "Chord vocabulary D vs. germ key-relativity");
+>    current diatonic vocabulary sounds good. If pursued later, safe subset =
+>    chromatic-approach-only (gaps.md path 3, drop altered dominants).
 >
-> 1 is what changes whether the output *sounds produced*; 2–3 refine
-> an already-working chord layer.
+> Tape texture (was item 4, landed 2026-07-08) confirmed **intentionally
+> subtle** by ear + spectral render 2026-07-12 — near-transparent, kept as
+> harmless character, not leaned on as a selling point. The paused
+> sampler-character buzz remains flag-gated, not a blocker.
+>
+> **Remaining before publicity = pre-launch infra/process hardening only
+> (below), most of it done or deferrable — no musical features left.**
 
 ### 1. Arrangement controller — phrase structure + dropouts + silences
 
@@ -189,8 +195,17 @@ composition-point mask filter + controller first), every `*-scheduler.ts`
 ### Pre-launch infra + process hardening (2026-07-09 dual review)
 
 From the Fable meta + architecture reviews. Terse by design — these
-are actions, not narratives. Do the cheap/high-leverage ones before or
-alongside the arrangement controller; they de-risk it and counter-melody.
+are actions, not narratives.
+
+**Status audit 2026-07-12:** ✅ dedup `DEFAULT_SAMPLE_RATE` + allowlist-
+validate enum flags — **done** (`constants.ts` `SAMPLE_RATE_ALLOWLIST`,
+`main.ts`). ✅ reseed-transition guard — **done** (forward-anchor collision
+test + master-gate crossfade schedule test in `adapter-param-timing.test.ts`).
+✅ tape ON/OFF confirmation — **done** (ear + `scripts/tape-spectrum.ts`:
+near-transparent, intentionally subtle). ⏸ decompose `chains/lofi.ts`
+(836→587, `tape.ts`/`reverb.ts`/`opt-validate.ts` extracted; `beds.ts`
+remaining) — **deferred**, non-blocking hygiene, do before counter-melody.
+Remaining items below are dev-tooling niceties, none launch-blocking.
 
 - **Dedup shared values** (arch §3/§6): export `DEFAULT_SAMPLE_RATE`
   (32000, currently defined in both `main.ts` + `offline-harness.ts`)
@@ -233,6 +248,10 @@ concurrent agents; doc-lifecycle procedure (separate discussion).
 ---
 
 ### 2 & 3. Chord comping — remaining (B envelope refinement + D vocabulary)
+
+> **Resolved 2026-07-12: B skipped (good enough), D deferred past launch.**
+> See the publicity-gate note above for rationale. The detail below is kept
+> as the post-launch pointer for if/when D is revisited.
 
 A (rhythm) and C (voicing variety) are done. Remaining (lower
 launch-priority than texture + arrangement above):
