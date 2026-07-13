@@ -147,25 +147,28 @@ sorted after the pad notes; falls outside the first-6 lock window).
 The engine plays every instrument continuously; nothing drops out —
 the biggest "tech demo vs. music" tell. Real lofi *breathes*.
 
-**Design SETTLED 2026-07-09 — full spec + decision log in
-[docs/arrangement.md](docs/arrangement.md). Ready for one-shot
-implementation.** Summary of A–F:
+**IMPLEMENTED + offline-validated 2026-07-12 (A2 event/dropout model);
+ear-test pending.** Full spec + decision-record in
+[docs/arrangement.md](docs/arrangement.md). The occupancy-Markov design
+(C1) was built, failed listen-check (unbounded absence — median 71 min for
+bed instruments), and was replaced. Summary:
 
-- **A2 mask-aware schedulers** (interactive, not subtractive-only):
-  `ArrangementController` runs first in `scheduleUntil`, writes a phrase
-  clock + active-mask to `EngineState`; each scheduler reads it (gate +
-  gentle adapt).
-- **Flat 8-bar phrase grid**; changes land only on boundaries.
-- **C1 discrete arrangement-state Markov machine** — curated 8-state
-  palette (`FULL`…`deep-breather`), pad-only floor, single-instrument
-  moves, energy-contour-tilted, ~1–2 min dwell.
-- **Three per-seed axes:** frequency (restlessness), presence-bias
-  (which instruments) — both **soft weightings, not clamps** — and depth
-  (mildly coupled to calm/busy). See seed-identity note below.
-- **Flagship coupling:** subtle melody space-fill when the beat/harmony
-  thins.
-- **Re-entry:** natural cuts (pad-floor makes tails a non-issue);
-  melody re-enters with a fresh germ phrase.
+- **A2 mask-aware schedulers:** `ArrangementController` runs first in
+  `scheduleUntil`, writes a phrase clock + active-mask to `EngineState`; a
+  composition-point filter in `ember.ts` gates events; only melody adapts.
+- **Per-role event/dropout** on a flat 8-bar grid: one move per boundary
+  (hold / drop one / restore one), Cox servo toward an energy-contour
+  target fullness, **hard per-role deadlines** that force a return (batched
+  when simultaneous) — bounding contiguous absence *by construction*
+  (bass 0 / chords 52 s / melody 78 s / drums 104 s, exact).
+- **Palette = legal-combo filter:** the curated states pruned to 6
+  (`FULL`…`bass-breather`; the two bass-absent near-silence states dropped —
+  deliberate deep-breather deferred to backlog).
+- **Per-seed identity:** favoured-to-drop (reused `presence-bias`, melody
+  signature-protected) + restlessness (change frequency, median ~72 s).
+  Soft weightings, not clamps.
+- **Flagship coupling** (melody space-fill) + **fresh-germ re-entry**
+  carried forward unchanged.
 - **Fingerprint PRESERVED** (open-at-`FULL` + named seed children) —
   non-breaking additive change, no §7.3a break.
 

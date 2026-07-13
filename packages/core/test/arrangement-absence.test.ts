@@ -9,11 +9,16 @@ import type { EngineState } from '../src/engines/ember/ember.js';
 import { Seed } from '../src/rng/seed.js';
 
 /**
- * Regression guard for the melody-absence bug (listen-check, 2026-07-09): a slow
- * energy-contour trough could pin the walk in the melody-absent state cluster
- * for 10-20+ min. The controller's melody refractory must cap contiguous
- * melody absence. This is the metric the offline range-validation *missed*
- * (it measured occupancy, not contiguous sojourn) — now a permanent test.
+ * Regression guard for the absence bug (listen-check, 2026-07-09): a slow
+ * energy-contour trough pinned the occupancy walk in a sparse-state cluster for
+ * 10-70+ min. The A2 event/dropout model bounds contiguous absence *by
+ * construction* — a per-role hard deadline force-restores a role (batching
+ * simultaneous deadlines to avoid competing-deadline starvation). This is the
+ * metric the original occupancy validation *missed* (it measured occupancy, not
+ * contiguous sojourn) — now a permanent test, asserted for **all four roles**.
+ *
+ * Caps (K_MAX, phrases ≈ 25.9 s @74): bass 0 (never dropped in the palette),
+ * chords 2, melody 3, drums 4. Worst-case absence = cap exactly.
  */
 describe('arrangement controller — contiguous role absence', () => {
   const bpm = 74;
@@ -22,7 +27,7 @@ describe('arrangement controller — contiguous role absence', () => {
   const PHRASES = 1400; // ~10 hours of arrangement
   const SEEDS = 300;
 
-  it('bounds contiguous melody absence to ≤ ~2 min across seeds + long walks', () => {
+  it('bounds contiguous absence for every role across seeds + long walks', () => {
     const meta = Seed.from(424242n).rng();
     const worst: Record<Role, number> = { bass: 0, chords: 0, melody: 0, drums: 0 };
     const perSeedWorstBed: number[] = []; // worst bass/chords/drums run per seed
@@ -66,9 +71,15 @@ describe('arrangement controller — contiguous role absence', () => {
         `max ${p(1)}s  |  seeds with bed absent >10min: ${bedStarvedSeeds}/${SEEDS}`,
     );
 
-    // Phrase 0 opens at FULL (all present), so every role is absent at most
-    // starting phrase 1. Melody is the only capped role: ~110 s cap → ≤ ~5
-    // phrases; assert ≤ 130 s with margin. (Was 22 min before the refractory.)
-    expect(sec(worst.melody)).toBeLessThanOrEqual(130);
+    // Every role is bounded by construction (A2 hard deadline). Worst-case
+    // absence = K_MAX phrases exactly. Assert each role's ceiling (no margin
+    // needed — the bound is exact, not statistical). Before A2, melody reached
+    // 22 min and bed instruments a median 71 min.
+    expect(sec(worst.bass)).toBe(0); // bass never absent in the palette
+    expect(sec(worst.chords)).toBeLessThanOrEqual(2 * phraseDur + 1);
+    expect(sec(worst.melody)).toBeLessThanOrEqual(3 * phraseDur + 1);
+    expect(sec(worst.drums)).toBeLessThanOrEqual(4 * phraseDur + 1);
+    // No bed role (bass/chords/drums) ever approaches the old-model minutes.
+    expect(bedStarvedSeeds).toBe(0);
   });
 });
