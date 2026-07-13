@@ -11,9 +11,22 @@ const state = vi.hoisted(() => ({ now: 0 }));
 vi.mock('tone', () => {
   class FakeParam {
     value = 0;
-    cancelScheduledValues(): void {}
-    setValueAtTime(): void {}
-    linearRampToValueAtTime(): void {}
+    // Automation log so a test can inspect the scheduled curve (used by the
+    // handoff gate-crossfade test). setValueAtTime/linearRampToValueAtTime
+    // record their (value, time); cancel truncates nothing here (the tests
+    // clear the log explicitly around the window they care about).
+    events: Array<{ kind: 'set' | 'ramp' | 'cancel'; value?: number; time?: number }> = [];
+    cancelScheduledValues(time: number): void {
+      this.events.push({ kind: 'cancel', time });
+    }
+    setValueAtTime(value: number, time: number): void {
+      this.value = value;
+      this.events.push({ kind: 'set', value, time });
+    }
+    linearRampToValueAtTime(value: number, time: number): void {
+      this.value = value;
+      this.events.push({ kind: 'ramp', value, time });
+    }
     rampTo(): void {}
   }
   class Gain {
@@ -183,5 +196,48 @@ describe('adapter engine handoff (reseed collision guard)', () => {
     // the still-scheduled outgoing ramp — so the two never fight on the signal.
     expect(incoming).toBeGreaterThan(outgoing);
     expect(incoming).toBeGreaterThan(100.75);
+  });
+
+  // Regression net for the *other* half of the reseed fix: the master gate
+  // crossfade. The collision guard above prevents the two seeds' filter ramps
+  // from fighting; this asserts the gate automation itself never commands a
+  // gain > 1.0 (an over-unity ramp is exactly what a "blast" looks like at the
+  // bus) and does dip-then-recover across the handoff (the crossfade is
+  // present, not a hard cut). Shape-based, so it survives HANDOFF_FLOOR /
+  // fade-time tuning but fails if the crossfade is removed or ramps over unity.
+  it('crossfades the master gate on handoff: dip then recover to unity, never over-unity', async () => {
+    state.now = 100;
+    const adapter = new ToneAudioAdapter();
+    adapter.setEngine(fixedEngine([]));
+    await adapter.start();
+
+    // Isolate the handoff window: drop everything start() scheduled.
+    // biome-ignore lint/suspicious/noExplicitAny: reach past `private` to the gate node in-test.
+    const gate = (adapter as any).out.gain as {
+      events: Array<{ kind: string; value?: number; time?: number }>;
+    };
+    gate.events.length = 0;
+
+    adapter.handoffEngine(fixedEngine([]));
+    // biome-ignore lint/suspicious/noExplicitAny: read the anchor the schedule targets.
+    const startT = (adapter as any).startAudioTime as number;
+
+    const ramps = gate.events.filter((e) => e.kind === 'ramp' && e.value !== undefined);
+    expect(ramps.length).toBeGreaterThanOrEqual(2);
+
+    // Blast guard: no scheduled gate value exceeds unity.
+    for (const e of gate.events) {
+      if (e.value !== undefined) expect(e.value).toBeLessThanOrEqual(1 + 1e-9);
+    }
+
+    const targets = ramps.map((e) => e.value as number);
+    // Crossfade present: the gate dips below full at the handoff instant …
+    const dip = ramps.find((e) => (e.value as number) < 1);
+    if (!dip) throw new Error('expected a dip ramp below unity at the handoff');
+    expect(dip.value as number).toBeGreaterThanOrEqual(0); // a dip, not a negative/glitch
+    expect(dip.time).toBeCloseTo(startT, 6);
+    // … and recovers to exactly unity afterwards (no lingering attenuation).
+    expect(targets[targets.length - 1]).toBeCloseTo(1, 9);
+    expect((ramps[ramps.length - 1]?.time as number) > startT).toBe(true);
   });
 });
