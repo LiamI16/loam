@@ -89,6 +89,13 @@ because if I'm leaving it on for hours, I want to know what it's doing.
 
 Made by Liam.
 
+## Support
+
+☕ Loam is free and always will be. If it helps you focus and you'd like to
+support a solo student developer, you can
+[buy me a coffee](https://ko-fi.com/liamimagawa) — no pressure, the whole thing
+works without it.
+
 ---
 
 ## For contributors
