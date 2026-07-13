@@ -27,6 +27,10 @@ Optional: most browsers will offer an "Install" option that gives Loam
 its own dock or home-screen icon. (See Quick Tour for per-platform
 steps.)
 
+> 🚧 **Coming soon — an Obsidian plugin.** The same engine, playing
+> endless focus lo-fi right inside your notes. In progress; ⭐ watch/star
+> the repo to hear when it lands.
+
 ## What is this?
 
 Loam grows endlessly from a seed — a short number that deterministically
@@ -166,7 +170,7 @@ Shipped:
 
 Planned for v1:
 - An Obsidian plugin — the validation beachhead beyond browser
-  playback. *Not yet started.*
+  playback. *In progress.*
 
 Out of scope (v1):
 - Not a general music app, not a DAW, not multi-genre, not a
