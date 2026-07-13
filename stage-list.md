@@ -57,6 +57,7 @@ Compact summary — full implementation notes in the linked docs.
 | analyze-seed dev tool | Scheduler-internal-state inspector (germ shape, per-seed parameter draws, effective-activity samples) — complements render-snippet | `scripts/analyze-seed.ts` |
 | Density option removed | `density` engine option + `densityStream` + density-fbm seed children excised; web-demo slider removed. Per-seed melody-activity now fully encapsulates the role | inline |
 | Tape texture stage | Master-bus tanh saturation → wow/flutter before warmth (drive 5, level-match trim 1.041, oversample 2x, bass A-fallback) + parallel HF-shelf broadband hiss bed (white → HP 60 → shelf +4 @ 1k → LP 11k, −72 dB, no AM), spectrum-locked to Sony HF-90 Type I ferric | See `docs/tape-texture.md` |
+| Arrangement controller | A2 per-role event/dropout: one move per 8-bar boundary (Cox servo toward energy-contour target fullness + hard per-role deadlines forcing return → contiguous absence bounded by construction: bass 0 / chords 52 s / melody 78 s / drums 104 s). 6-state palette as legal-combo filter; per-seed favoured-to-drop + restlessness; melody space-fill + fresh-germ re-entry. Fingerprint-preserving (open-at-FULL). Replaces the failed occupancy-Markov walk. | See `docs/arrangement.md` |
 
 **Drum rewrite details:** `drum-scheduler.ts` rewritten. Per-voice
 constant micro-timing (snare drag +15 ms, hat slight ahead −3 ms,
@@ -147,8 +148,8 @@ sorted after the pad notes; falls outside the first-6 lock window).
 The engine plays every instrument continuously; nothing drops out —
 the biggest "tech demo vs. music" tell. Real lofi *breathes*.
 
-**IMPLEMENTED + offline-validated 2026-07-12 (A2 event/dropout model);
-ear-test pending.** Full spec + decision-record in
+**DONE 2026-07-12 — A2 event/dropout model, offline- + ear-validated
+(seed 7).** Full spec + decision-record in
 [docs/arrangement.md](docs/arrangement.md). The occupancy-Markov design
 (C1) was built, failed listen-check (unbounded absence — median 71 min for
 bed instruments), and was replaced. Summary:

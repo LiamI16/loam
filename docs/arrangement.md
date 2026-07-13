@@ -1,6 +1,7 @@
 # Arrangement controller — design (ACTIVE)
 
-> **Model: A2 event/dropout (settled 2026-07-11, implemented 2026-07-12).**
+> **Model: A2 event/dropout (settled 2026-07-11, implemented + ear-validated
+> 2026-07-12).**
 > Replaces the occupancy-Markov walk, which failed listen-check with
 > *unbounded* per-instrument absence (melody up to 22 min; bed instruments a
 > median 71 min): in an occupancy model absence-duration = dwell-duration, and
@@ -174,8 +175,10 @@ reimplementation) and measures **contiguous sojourn** (not just occupancy).
   sparsest reached median 0.50 (2-role breather), p05 0.25 (`bass-breather`,
   bounded ≤52 s). Deliberately on the subtle/safe side.
 
-Still ear-only: whether breathing *feels motivated* (contour→mask), space-fill
-subtlety, and whether ~37 %-below-`FULL` is the right amount (taste).
+**Ear-validated 2026-07-12** (seed 7, the restless/most-breathing seed):
+breathing reads as musical, re-entries and cuts are clean, no popping; the
+~37 %-below-`FULL` ratio judged good (not too sparse). The center/hold dials are
+the easy lever if a future pass wants more air.
 
 ## Acceptance
 
