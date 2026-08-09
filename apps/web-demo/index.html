@@ -2,7 +2,7 @@
 <html lang="en" class="theme-ember">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Loam</title>
   <meta name="theme-color" content="#15100d" />
   <meta name="description" content="Offline, infinite, on-device generative lo-fi." />
@@ -89,21 +89,51 @@
        order, override every theme — that's the trap). */
     * { box-sizing: border-box; }
     html, body { height: 100%; }
+    /* Paint the base color on <html> too, not just <body>. On iOS the visual
+       viewport shifts as the Safari toolbar/home-indicator show/hide and the
+       page extends into the safe areas (viewport-fit=cover); anywhere <body>
+       doesn't reach, the system canvas showed through as white bars. The theme
+       class lives on <html>, so var(--bg) resolves to the active palette here. */
+    html { background: var(--bg); }
     body {
       margin: 0;
-      background: radial-gradient(120% 120% at 50% 18%, var(--bg2) 0%, var(--bg) 60%);
+      /* No background here: the base gradient lives on the fixed body::before
+         layer (viewport-locked) instead of on the body box. Painting it on the
+         body box meant that on rotate/scroll — when the body box and the html
+         box differ in size — the gradient edge and html's solid --bg met at a
+         faint visible seam. A single viewport-fixed layer has no seam. */
       color: var(--ink);
       font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      /* min-height uses dvh so it fills the *dynamic* mobile viewport (100vh /
+         100% are wrong while the browser chrome is showing). */
       min-height: 100%;
+      min-height: 100dvh;
       -webkit-font-smoothing: antialiased;
       user-select: none;
-      overflow: hidden;
+      /* Scroll only when content genuinely overflows (short/landscape phones,
+         large accessibility text) — invisible otherwise, so the calm single
+         screen is preserved. overscroll none kills the iOS rubber-band bounce;
+         overflow-x hidden guards against a stray horizontal scrollbar. */
+      overflow-y: auto;
+      overflow-x: hidden;
+      overscroll-behavior-y: none;
     }
-    .wrap { display: flex; flex-direction: column; align-items: center; gap: 42px; padding: 32px; position: relative; z-index: 1; }
+    /* margin:auto (not justify-content:center) does the vertical centering: it
+       centers when there's room but stays fully scrollable to the top when the
+       content overflows — justify-content:center clips the top unreachably. */
+    .wrap { display: flex; flex-direction: column; align-items: center; gap: 42px; padding: 32px; position: relative; z-index: 1; margin: auto; }
+
+    /* ── short-viewport reflow (landscape phones, split-screen) ──
+       Shrink the hero + spacing so everything fits without scrolling on the
+       common case; the body scroll above is the backstop for the rest. */
+    @media (max-height: 600px) {
+      .wrap { gap: 20px; padding: 20px 20px calc(20px + env(safe-area-inset-bottom)); }
+      .ember-stage { width: 132px; height: 132px; }
+      .footer { display: none; }
+    }
 
     /* ── texture: vignette + film grain ──
        Pure radial gradients read flat; a vignette adds depth and a faint
@@ -115,7 +145,12 @@
       inset: 0;
       pointer-events: none;
       z-index: -1;
-      background: radial-gradient(120% 120% at 50% 32%, transparent 52%, rgba(0, 0, 0, 0.5) 100%);
+      /* Two stacked layers, viewport-fixed: the vignette (on top) over the base
+         bg2→bg radial lift. Fixed to the viewport so it never seams against
+         html's solid --bg regardless of body-box size (rotate/scroll). */
+      background:
+        radial-gradient(120% 120% at 50% 32%, transparent 52%, rgba(0, 0, 0, 0.5) 100%),
+        radial-gradient(120% 120% at 50% 18%, var(--bg2) 0%, var(--bg) 60%);
     }
     body::after {
       content: "";
@@ -504,8 +539,8 @@
     /* ── extras menu: trigger + slide-in side drawer ── */
     .menu-btn {
       position: fixed;
-      top: 20px;
-      right: 20px;
+      top: calc(20px + env(safe-area-inset-top));
+      right: calc(20px + env(safe-area-inset-right));
       z-index: 12;
       width: 44px;
       height: 44px;
@@ -574,6 +609,14 @@
       display: flex;
       flex-direction: column;
       padding: 84px 26px 26px;
+      /* Scroll the whole drawer when its content is taller than the screen
+         (landscape phones / short viewports) — otherwise the theme row and
+         footer are stranded off the bottom with no way to reach them. The
+         internal #favList scroll still handles long pin lists on tall screens;
+         this is the backstop. `contain` stops the scroll chaining to the page
+         behind the drawer. */
+      overflow-y: auto;
+      overscroll-behavior: contain;
     }
     .menu.open .menu-drawer { transform: translateX(0); }
     /* Ember accent rail down the drawer's left edge — ties the panel to
@@ -1072,7 +1115,7 @@
 
     .footer {
       position: fixed;
-      bottom: 22px;
+      bottom: calc(22px + env(safe-area-inset-bottom));
       font-size: 9px;
       letter-spacing: 0.3em;
       text-transform: uppercase;
