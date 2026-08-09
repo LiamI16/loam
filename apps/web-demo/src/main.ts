@@ -383,6 +383,7 @@ function setSeedMeta(bpm: number): void {
   // Heart aria-pressed + chevron visibility track the active seed and
   // pin-list size; do it here so every BPM/seed update keeps them honest.
   refreshFavoritesUi();
+  updateMediaSessionMetadata();
 }
 // Build a throwaway engine just to peek the seed's home BPM, so both the
 // idle ember pulse and the seed-meta readout match the seed before play.
@@ -626,6 +627,7 @@ async function toggle(): Promise<void> {
     stage.classList.add('on');
     hint.textContent = 'listening · leave it running';
     playing = true;
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
     // Resume the rain cycle alongside playback so transitions only happen
     // against audible audio.
     if (uiState.rainMode === 'cycle') {
@@ -638,6 +640,7 @@ async function toggle(): Promise<void> {
     stage.classList.remove('on');
     hint.textContent = 'paused';
     playing = false;
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
     // Freeze the cycle while paused — no transitions happening to silence.
     clearRainCycle();
   }
@@ -660,7 +663,51 @@ stage.addEventListener('keydown', (e) => {
 // while invisible and can produce a paint catch-up on resume.
 document.addEventListener('visibilitychange', () => {
   document.body.dataset.hidden = String(document.hidden);
+  // iOS throttles the live-synth render when the screen locks / the app
+  // backgrounds, so continued playback stutters (see adapter). Rather than
+  // glitch, cleanly pause when hidden; the user resumes with a tap on return or
+  // the lock-screen play control (a valid gesture via the Media Session
+  // handler). Desktop/Android (backgroundRenderConstrained === false) keep
+  // playing while hidden, unchanged. Not auto-resumed: an off-gesture resume is
+  // rejected/wedged on iOS.
+  if (document.hidden && playing && adapter?.backgroundRenderConstrained) {
+    void toggle();
+  }
 });
+
+// ── Media Session: lock-screen metadata + transport controls ──────
+// Chiefly for iOS, where audio routes through a media element (see the
+// adapter): this gives the OS a title/artwork and play/pause handlers so the
+// lock screen and Control Center can drive playback. Harmless (no-op) on
+// platforms without the API. `function` declaration so setSeedMeta — which
+// runs during module init, before this block — can call it via hoisting.
+function updateMediaSessionMetadata(): void {
+  if (!('mediaSession' in navigator)) return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: `seed ${currentSeed} · ${currentBpm} bpm`,
+      artist: 'Loam',
+      album: 'generative lo-fi',
+      artwork: [
+        {
+          src: new URL('apple-touch-icon.png', document.baseURI).href,
+          sizes: '180x180',
+          type: 'image/png',
+        },
+      ],
+    });
+  } catch {
+    // MediaMetadata constructor unsupported — non-fatal, skip artwork/metadata.
+  }
+}
+if ('mediaSession' in navigator) {
+  navigator.mediaSession.setActionHandler('play', () => {
+    if (!playing) void toggle();
+  });
+  navigator.mediaSession.setActionHandler('pause', () => {
+    if (playing) void toggle();
+  });
+}
 
 // ── stop buttons from latching focus on mouse click ───────────────
 // Default browser behavior focuses a button when you click it, which

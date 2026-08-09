@@ -11,6 +11,49 @@
 
 ---
 
+## Status (2026-08-08) — device-tested on iOS Safari + installed PWA
+
+Shipped and confirmed on a real iPhone:
+
+- **M1 layout** ✅ — safe-area painting (`html` base color + `viewport-fit=cover`),
+  `100dvh`, landscape reflow (`max-height:600px`) + `margin:auto`/`overflow-y:auto`
+  scroll fallback, viewport-fixed background (no rotate seam), drawer scroll.
+- **M6 silent switch** ✅ — the launch-critical fix. Audio routes through a
+  `MediaStreamAudioDestinationNode` → hidden `<audio playsinline>` on iOS only
+  (`adapter.ts` `setupOutput`/`isIOS`), so Web Audio ignores the ringer switch.
+  Desktop/Android keep plain `toDestination()`.
+- **M5 Media Session** ✅ — lock-screen metadata (seed/BPM) + play/pause handlers
+  (`main.ts`). Play from the lock screen is a valid gesture, so it resumes.
+
+**M4 background/lock — partially shipped, with a known limit.** The media-element
+route *does* keep the context alive in the background, but iOS throttles the
+**live-synth render** when the screen locks, so continued playback **stutters
+immediately** (a render underrun, not a scheduler-starvation one — a deep
+scheduling lookahead was tried and reverted because it targeted the wrong layer).
+**v1 behaviour (chosen 2026-08-08): pause when hidden** on the
+background-constrained (iOS) path — `adapter.backgroundRenderConstrained` gates a
+pause in the `visibilitychange` handler — and resume on a tap / lock-screen play.
+`stop()` pauses the media element (clean silence while locked, vs a kept-alive
+live stream that jitters); `start()` rebuilds a fresh MediaStream + `<audio>`
+element within the gesture so resume never rides a stream that went stale during
+the lock-suspend. Device-confirmed reliable across repeated lock/unlock cycles.
+Residual: a brief (~½ s) glitch at the lock and resume transitions — the render
+is already throttling before the pause handler fires, and the fresh stream takes
+a beat to spin up. Accepted for v1; the real cure is the deferred pre-render.
+No continuous locked playback.
+
+### Deferred — smooth background playback (ideally before launch)
+
+The *proper* fix for continuous locked-screen playback is to stop synthesizing
+live in the background: **pre-render** audio into a buffer (offline render ahead
+of time, or move the engine into an **AudioWorklet** that runs on the audio
+thread, immune to the main-thread/CPU throttle) and play *that* through the media
+element. Significant work; the maintainer wants it before launch if feasible, but
+it does not block the silent-switch launch win. Until then, M4 stays "pause on
+lock."
+
+---
+
 ## Why mobile is broken today (root causes)
 
 Three structural assumptions in the web demo are desktop-only:
@@ -38,7 +81,7 @@ the moment the screen locks.
 
 ### Tier 1 — blocks basic usability
 
-**M1. Responsive layout**
+**M1. Responsive layout** *(✅ shipped 2026-08-08 — see Status.)*
 Add small-screen breakpoints; switch the viewport height to `100dvh`
 (mobile browser chrome makes `100vh`/`100%` wrong); add
 `env(safe-area-inset-*)` padding so content clears the notch and home
@@ -60,17 +103,18 @@ editable labels.
 ### Tier 2 — core mobile experience for a focus-music app
 
 **M4. Background & lock-screen playback** *(highest-value single item)*
+*(Partially shipped 2026-08-08 — pause-on-lock; smooth playback deferred. See Status.)*
 iOS Safari suspends the `AudioContext` when the tab backgrounds or the
 screen locks, so audio stops the instant the phone is pocketed — fatal
 for sustained focus listening. Needs a keep-alive strategy (silent
 media-element anchor and/or Media Session) and explicit verification it
 survives lock on real iOS.
 
-**M5. Media Session integration**
+**M5. Media Session integration** *(✅ shipped 2026-08-08 — see Status.)*
 Lock-screen / notification transport controls + metadata (title, seed,
 artwork). Pairs with M4 so users can pause/resume without unlocking.
 
-**M6. iOS audio-lifecycle handling**
+**M6. iOS audio-lifecycle handling** *(silent switch ✅ shipped 2026-08-08 — see Status; interruption/return handling still open.)*
 Three distinct iOS gotchas, none handled today: the hardware **silent
 switch** mutes Web Audio (needs the media-element routing workaround);
 **interruptions** (calls, audio-route changes) suspend the context;

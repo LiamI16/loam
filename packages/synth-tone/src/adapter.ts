@@ -58,6 +58,20 @@ function configureToneContextOnce(sampleRate?: number): void {
   Tone.setContext(context);
 }
 
+/** iOS (and iPadOS 13+, which masquerades as desktop Safari) is the only
+ * platform that needs the media-element output route below: its Web Audio
+ * output obeys the hardware ringer switch and is suspended on
+ * background/lock unless playback is routed through an `HTMLMediaElement`
+ * that flips the audio session to the "media playback" category. Desktop and
+ * Android have neither quirk, so they keep the plain `toDestination()` path. */
+function isIOS(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  return (
+    /iP(hone|od|ad)/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+}
+
 /** Inline Web Worker source. The worker exists for one reason: browsers
  * throttle main-thread setInterval to ~1 Hz when a tab/window is hidden or
  * minimized, which starves our 200 ms scheduling lookahead and causes audible
@@ -104,6 +118,17 @@ export class ToneAudioAdapter {
 
   private engine: Engine | null = null;
   private startAudioTime = 0;
+  /** True on iOS, where output takes the media-element route (see `setupOutput`)
+   * so Web Audio escapes the ringer switch. Also means the live-synth render is
+   * throttled in the background, so the app pauses when hidden rather than
+   * stutter (see `backgroundRenderConstrained`). */
+  private mediaRoute = false;
+  /** iOS media route (see `buildMediaRoute`). The master output feeds this
+   * MediaStream, played through the hidden `<audio>` element. Rebuilt fresh on
+   * each `start()` — a stream that went stale during a screen-lock suspend
+   * comes back silent. */
+  private mediaEl: HTMLAudioElement | null = null;
+  private streamDest: MediaStreamAudioDestinationNode | null = null;
   private pumpWorker: Worker | null = null;
   private pumpWorkerUrl: string | null = null;
   /** Furthest absolute audio time any event has been scheduled at. Used to
@@ -123,8 +148,72 @@ export class ToneAudioAdapter {
     // bound to whatever context is active at construction. Guarded so
     // multiple adapter instances don't spawn multiple contexts.
     configureToneContextOnce(opts.sampleRate);
-    this.out = new Tone.Gain(0).toDestination();
+    this.out = new Tone.Gain(0);
     this.master = new Tone.Volume(0).connect(this.out);
+    this.setupOutput();
+  }
+
+  /**
+   * Wire the master gate to the actual output device. Desktop/Android connect
+   * straight to the destination (unchanged, zero risk). iOS instead taps the
+   * gate into a `MediaStreamAudioDestinationNode` played through a hidden
+   * `<audio>` element — the only way to (a) escape the hardware ringer switch
+   * muting Web Audio and (b) keep the AudioContext alive when the tab
+   * backgrounds or the screen locks. If any of that setup throws (older WebViews
+   * without `createMediaStreamDestination`, no `document`, etc.) it falls back
+   * to `toDestination()` so there is always an output.
+   */
+  private setupOutput(): void {
+    if (isIOS() && typeof document !== 'undefined') {
+      try {
+        this.buildMediaRoute();
+        this.mediaRoute = true;
+        return;
+      } catch (err) {
+        console.warn('[loam] iOS media-element route unavailable, using destination', err);
+      }
+    }
+    this.out.toDestination();
+  }
+
+  /**
+   * (Re)build the iOS media-element output: a fresh `MediaStreamAudioDestination`
+   * fed by the master gate, played through a fresh hidden `<audio>` element. Any
+   * previous stream/element is disconnected and removed first.
+   *
+   * Called once at construction and again at the top of every `start()`. The
+   * rebuild is the fix for resume-after-lock: when the screen locks, iOS
+   * suspends the context and the live MediaStream goes stale — reusing it plays
+   * silence. A fresh stream + element each start sidesteps that entirely.
+   */
+  private buildMediaRoute(): void {
+    const rawCtx = Tone.getContext().rawContext as unknown as AudioContext;
+    if (this.streamDest) {
+      try {
+        this.out.disconnect(this.streamDest);
+      } catch {
+        // already disconnected — ignore
+      }
+    }
+    if (this.mediaEl) {
+      this.mediaEl.pause();
+      this.mediaEl.srcObject = null;
+      this.mediaEl.remove();
+    }
+    const streamDest = rawCtx.createMediaStreamDestination();
+    this.out.connect(streamDest);
+    const el = document.createElement('audio');
+    // playsinline + no controls: it must never surface visually; it exists only
+    // to host the audio stream. Kept in the DOM (some iOS versions won't play a
+    // detached media element).
+    el.setAttribute('playsinline', '');
+    el.setAttribute('webkit-playsinline', '');
+    el.controls = false;
+    el.style.display = 'none';
+    el.srcObject = streamDest.stream;
+    document.body.appendChild(el);
+    this.streamDest = streamDest;
+    this.mediaEl = el;
   }
 
   /** Register a voice trigger under a channel name. Idempotent. */
@@ -213,7 +302,23 @@ export class ToneAudioAdapter {
    * and start the scheduling loop. Must be called from a user gesture.
    */
   async start(): Promise<void> {
+    // On iOS, rebuild a fresh media route and start it *within* the user gesture
+    // (before any await), so iOS accepts the play() and resume never rides a
+    // stream that went stale during a screen-lock suspend. Its promise is
+    // awaited below for logging only.
+    let mediaPlay: Promise<void> | undefined;
+    if (this.mediaRoute) {
+      this.buildMediaRoute();
+      mediaPlay = this.mediaEl?.play();
+    }
     await Tone.start();
+    if (mediaPlay) {
+      try {
+        await mediaPlay;
+      } catch (err) {
+        console.warn('[loam] media-element play rejected', err);
+      }
+    }
 
     this.engine?.reset();
     // Anchor past anything pre-scheduled by a previous run, plus a hair of
@@ -244,6 +349,19 @@ export class ToneAudioAdapter {
     this.startPumpClock();
   }
 
+  /**
+   * True when playback is on the iOS media-element route, where the OS throttles
+   * the live-synth render in the background — locked-screen playback stutters
+   * (see `setupOutput`). The app uses this to decide whether to cleanly pause
+   * when the page hides rather than let it glitch. False on the plain
+   * destination path (desktop / Android), which keeps playing smoothly while
+   * hidden. Fixing background *playback* itself needs offline pre-rendering
+   * (deferred — see docs/mobile.md M4).
+   */
+  get backgroundRenderConstrained(): boolean {
+    return this.mediaRoute;
+  }
+
   private startPumpClock(): void {
     if (!this.pumpWorker) {
       this.pumpWorkerUrl = URL.createObjectURL(
@@ -268,6 +386,11 @@ export class ToneAudioAdapter {
    */
   stop(): void {
     this.stopPumpClock();
+    // Pause the media element (iOS route) so the background is cleanly silent: a
+    // kept-alive live MediaStream jitters under the iOS background render
+    // throttle even while outputting silence. The next start() rebuilds a fresh
+    // route + resumes the context within its gesture, so resume still works.
+    this.mediaEl?.pause();
     const now = Tone.now();
     const gain = this.out.gain;
     gain.cancelScheduledValues(now);
