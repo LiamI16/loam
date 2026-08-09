@@ -1124,6 +1124,31 @@
     }
     .footer span { color: var(--ember-dim); }
 
+    /* ── touch refinements (coarse pointers only) ──
+       Two problems on touch: hover-gated affordances never appear (no hover),
+       and several targets sit below the ~44px comfortable minimum. Surface and
+       enlarge them here without touching the mouse/desktop layout. */
+    @media (pointer: coarse) {
+      /* Affordances that were revealed only on :hover — make them persistent. */
+      .fav-pin-actions { opacity: 1; }
+      .fav-folder-del { opacity: 0.5; }
+      .pin-chevron { opacity: 1; padding: 10px 12px; font-size: 22px; }
+
+      /* Comfortable tap targets for the primary controls. */
+      .seed-input { padding: 10px 12px; }
+      .seed-btn { padding: 12px 0; }
+      .seed-btn-icon { flex-basis: 44px; }
+      .tog { padding: 14px 0; }
+
+      /* Denser drawer controls — bump the pin row action buttons. */
+      .fav-pin-act { padding: 8px 10px; font-size: 15px; }
+      .fav-pin-act-icon { padding: 8px 10px; }
+
+      /* Theme swatches: slightly larger dots + more spacing for the tap. */
+      .theme-swatch { width: 26px; height: 26px; }
+      .theme-swatches { gap: 14px; }
+    }
+
     /* Pause every infinite CSS animation when the tab is hidden. Browsers
        already throttle rendering, but they don't *pause* animation timelines —
        on tab-switch-back there can be a layout/paint catch-up. This
@@ -1220,7 +1245,7 @@
         <div class="seed-label">seed <span class="seed-meta" id="seedMeta"></span></div>
         <div class="seed-input-row">
           <button id="pinPrev" class="pin-chevron is-empty" type="button" aria-label="Previous pinned seed">&lsaquo;</button>
-          <input id="seed" class="seed-input" type="text" spellcheck="false" autocomplete="off" />
+          <input id="seed" class="seed-input" type="text" inputmode="numeric" spellcheck="false" autocomplete="off" />
           <button id="pinNext" class="pin-chevron is-empty" type="button" aria-label="Next pinned seed">&rsaquo;</button>
         </div>
         <div class="seed-actions">

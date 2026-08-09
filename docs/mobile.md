@@ -24,6 +24,13 @@ Shipped and confirmed on a real iPhone:
   Desktop/Android keep plain `toDestination()`.
 - **M5 Media Session** ✅ — lock-screen metadata (seed/BPM) + play/pause handlers
   (`main.ts`). Play from the lock screen is a valid gesture, so it resumes.
+- **M2 touch controls** ✅ — audit found every keyboard shortcut already has an
+  on-screen control (roll/menu/pin/chevrons/ember tap); nothing was missing.
+- **M3 hover affordances + M9 touch ergonomics** ✅ — a `@media (pointer: coarse)`
+  block (`index.html`) surfaces the previously hover-only pin-row actions and
+  folder-delete, brightens the pin chevrons, and enlarges the primary tap targets
+  (seed input/buttons, toggles, chevrons, swatches) toward ~44px. Seed input gets
+  `inputmode="numeric"` for the number pad. Desktop (`pointer: fine`) unchanged.
 
 **M4 background/lock — partially shipped, with a known limit.** The media-element
 route *does* keep the context alive in the background, but iOS throttles the
@@ -88,13 +95,13 @@ Add small-screen breakpoints; switch the viewport height to `100dvh`
 indicator. Audit `overflow: hidden` on `body` for clipping on short
 viewports.
 
-**M2. Touch-reachable controls (de-keyboard the core actions)**
+**M2. Touch-reachable controls (de-keyboard the core actions)** *(✅ shipped 2026-08-08 — already covered; see Status.)*
 Every keyboard shortcut needs an on-screen control reachable by thumb:
 reroll (`r`), favorite toggle (`m`/`f`), prev/next pinned seed
 (`[`/`]`), menu open. Play/pause (ember tap) and the roll/copy buttons
 already exist; the rest do not.
 
-**M3. Replace hover-only affordances with tap-surfaced ones**
+**M3. Replace hover-only affordances with tap-surfaced ones** *(✅ shipped 2026-08-08 — see Status.)*
 Make hover-gated affordances visible/usable on coarse pointers — e.g.
 gate them behind `@media (pointer: coarse)` as always-visible, or
 tap-to-reveal. Covers pin chevron, folder delete, slider thumb,
@@ -135,7 +142,7 @@ Reorder / move-to-folder uses HTML5 `draggable` / `dragstart` / `drop`
 Pointer Events reorder, or lean on the existing `movePopup` tap-driven
 move flow and drop DnD entirely on coarse pointers.
 
-**M9. Touch ergonomics & input types**
+**M9. Touch ergonomics & input types** *(✅ shipped 2026-08-08 — see Status. Drag-and-drop reorder M8 + PWA-install polish M10 still open.)*
 ≥44px touch targets (pin chevrons and slider thumbs are far smaller),
 usable range sliders under touch, and `inputmode="numeric"` on seed
 entry so the numeric keyboard appears.
