@@ -148,6 +148,13 @@ sorted after the pad notes; falls outside the first-6 lock window).
 >
 > **Remaining before publicity = pre-launch infra/process hardening only
 > (below), most of it done or deferrable — no musical features left.**
+>
+> **Mobile — device-tested + launch-ready 2026-08-08** (was a separate
+> de-risking blocker). Silent-switch, Media Session, background pause-on-lock,
+> responsive layout, and touch ergonomics all shipped + confirmed on iOS. Only
+> deferred: smooth *continuous* locked-screen playback (needs pre-render /
+> AudioWorklet — "ideally before launch"). Source of truth: `docs/mobile.md`
+> Status.
 
 ### 1. Arrangement controller — phrase structure + dropouts + silences
 
