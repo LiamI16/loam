@@ -338,6 +338,10 @@
       border-radius: 2px;
       outline: none;
       cursor: pointer;
+      /* Let a touch-drag on the slider adjust it instead of being interpreted as
+         a page-scroll gesture (the page became scrollable with the mobile
+         layout, which otherwise steals horizontal drags on the thin track). */
+      touch-action: none;
     }
     input[type=range]::-webkit-slider-thumb {
       -webkit-appearance: none;

@@ -247,8 +247,18 @@ function nextNewFolderName(): string {
   return base;
 }
 
+// `crypto.randomUUID()` is only defined in a secure context (HTTPS / localhost);
+// over plain LAN http (dev testing) or in some webviews it's undefined and would
+// throw, silently breaking folder creation. Fall back to a good-enough unique id.
+function newId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `f-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function addFolder(): string {
-  const id = crypto.randomUUID();
+  const id = newId();
   favorites.folders.push({ id, name: nextNewFolderName(), collapsed: false });
   // Render will focus + select this folder's name input for inline rename.
   focusFolderId = id;
@@ -969,17 +979,40 @@ $<HTMLButtonElement>('roll').addEventListener('click', () => {
   void reseed(randomSeed());
 });
 
+// `navigator.clipboard` is secure-context-only (HTTPS / localhost); over plain
+// LAN http it's blocked. Fall back to the legacy execCommand path so copy works
+// there too (and in older browsers).
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // fall through to the legacy path
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 $<HTMLButtonElement>('copy').addEventListener('click', async () => {
   // Copy a permalink, not the bare integer — pasting into chat/email gives
   // the recipient a one-click playable URL rather than an opaque number.
   const url = new URL(window.location.href);
   url.searchParams.set('seed', currentSeed.toString());
-  try {
-    await navigator.clipboard.writeText(url.toString());
-    setSeedHint('link copied');
-  } catch {
-    setSeedHint('clipboard blocked');
-  }
+  setSeedHint((await copyText(url.toString())) ? 'link copied' : 'clipboard blocked');
 });
 
 // ── global keyboard: spacebar plays/pauses ──────────────────────────
