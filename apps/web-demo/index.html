@@ -94,7 +94,16 @@
        page extends into the safe areas (viewport-fit=cover); anywhere <body>
        doesn't reach, the system canvas showed through as white bars. The theme
        class lives on <html>, so var(--bg) resolves to the active palette here. */
-    html { background: var(--bg); }
+    html {
+      background: var(--bg);
+      /* Kill the grey flash iOS paints over tapped elements, and stop iOS from
+         auto-inflating text in landscape — both read as bugs on a designed UI. */
+      -webkit-tap-highlight-color: transparent;
+      -webkit-text-size-adjust: 100%;
+    }
+    /* manipulation = no double-tap-zoom and no ~300ms tap delay on the primary
+       controls, so taps feel instant. (Range inputs set their own touch-action.) */
+    .ember-stage, button { touch-action: manipulation; }
     body {
       margin: 0;
       /* No background here: the base gradient lives on the fixed body::before
@@ -1137,6 +1146,13 @@
       .fav-pin-actions { opacity: 1; }
       .fav-folder-del { opacity: 0.5; }
       .pin-chevron { opacity: 1; padding: 10px 12px; font-size: 22px; }
+
+      /* 16px inputs so iOS doesn't zoom the viewport on focus (it auto-zooms
+         any input with font-size < 16px, jerking the layout). */
+      .seed-input,
+      .val-edit,
+      .fav-folder-name,
+      .fav-pin-note { font-size: 16px; }
 
       /* Comfortable tap targets for the primary controls. */
       .seed-input { padding: 10px 12px; }

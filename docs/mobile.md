@@ -31,6 +31,16 @@ Shipped and confirmed on a real iPhone:
   folder-delete, brightens the pin chevrons, and enlarges the primary tap targets
   (seed input/buttons, toggles, chevrons, swatches) toward ~44px. Seed input gets
   `inputmode="numeric"` for the number pad. Desktop (`pointer: fine`) unchanged.
+- **Copy/folder/slider robustness** ✅ — `navigator.clipboard` and
+  `crypto.randomUUID()` are secure-context-only; added an `execCommand` copy
+  fallback + a `newId()` UUID fallback, and `touch-action:none` on the range
+  inputs so touch-drag adjusts them instead of scrolling. Seed box also accepts a
+  pasted Loam permalink and extracts the integer (`parseSeedInput`).
+- **Share + tap/zoom polish** ✅ (2026-08-09) — the copy button becomes a native
+  **share** sheet where `navigator.share` exists (`main.ts`), falling back to
+  copy. `-webkit-tap-highlight-color:transparent` + `touch-action:manipulation`
+  remove the grey tap flash and double-tap-zoom delay; 16px inputs on coarse
+  pointers stop iOS zooming the viewport on focus.
 
 **M4 background/lock — partially shipped, with a known limit.** The media-element
 route *does* keep the context alive in the background, but iOS throttles the
@@ -129,10 +139,16 @@ switch** mutes Web Audio (needs the media-element routing workaround);
 `visibilitychange` handler (`main.ts`) only pauses *animations* — it
 does nothing for the audio context.
 
-**M7. Screen Wake Lock**
+**M7. Screen Wake Lock** *(post-launch — but note: cheap alternative to the deferred M4 pre-render; see backlog.)*
 Use the Screen Wake Lock API to keep the screen awake while playing (or
 guarantee audio survives screen-off via M4). Without it the session
 dies on the default auto-lock timer.
+
+**Key insight (2026-08-09):** an opt-in "keep screen on" wake-lock toggle is a
+*cheap alternative* to the deferred smooth-background work. With the screen kept
+awake the phone never locks, so there's no CPU throttle and playback stays smooth
+and continuous — satisfying most "leave it running" cases without the heavy
+offline-render / AudioWorklet rewrite. Weigh this before committing to that task.
 
 ### Tier 3 — polish for parity
 
@@ -154,6 +170,26 @@ iOS has no `beforeinstallprompt`, so the install path needs explicit
 (`vite-plugin-pwa` in `vite.config.ts`).
 
 ---
+
+## Post-launch polish backlog (from 2026-08-09 mobile audit)
+
+Non-blocking niceties surfaced while hardening mobile. None gate launch.
+
+- **Wake-lock "keep screen on" toggle (M7)** — the cheap alternative to the
+  deferred smooth-background work (see M7 note above). Likely the highest-value
+  item here.
+- **iOS "Add to Home Screen" hint** — iOS has no `beforeinstallprompt`, so users
+  never discover install. A small one-time hint (share-sheet → Add to Home
+  Screen) would surface the already-working PWA (manifest is complete). Part of
+  M10.
+- **Two-column landscape layout** — landscape currently just reflows + scrolls
+  (functional, not elegant). A proper ember-beside-controls layout would use the
+  space better.
+- **Long-press callout suppression** — `-webkit-touch-callout: none` on the ember
+  (and other non-text controls) so a long-press doesn't raise the iOS
+  selection/callout menu.
+- **Touch drag-and-drop reorder (M8)** — favorites reorder uses HTML5 DnD, inert
+  on touch; replace with Pointer Events or lean on the existing tap-move flow.
 
 ## Recommended MVP cut
 

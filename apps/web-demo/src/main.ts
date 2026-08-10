@@ -1025,12 +1025,29 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-$<HTMLButtonElement>('copy').addEventListener('click', async () => {
-  // Copy a permalink, not the bare integer — pasting into chat/email gives
-  // the recipient a one-click playable URL rather than an opaque number.
+// The share/copy button. Where the Web Share API exists (mobile, some
+// desktops), relabel it "share" and open the native share sheet — far easier
+// than copy → switch apps → paste on a phone. Everywhere else it stays "copy".
+const shareBtn = $<HTMLButtonElement>('copy');
+const canShare = typeof navigator.share === 'function';
+if (canShare) shareBtn.textContent = 'share';
+shareBtn.addEventListener('click', async () => {
+  // Share/copy a permalink, not the bare integer — the recipient gets a
+  // one-click playable URL rather than an opaque number.
   const url = new URL(window.location.href);
   url.searchParams.set('seed', currentSeed.toString());
-  setSeedHint((await copyText(url.toString())) ? 'link copied' : 'clipboard blocked');
+  const link = url.toString();
+  if (canShare) {
+    try {
+      await navigator.share({ title: 'Loam', text: `Loam · seed ${currentSeed}`, url: link });
+      return;
+    } catch (err) {
+      // User dismissed the sheet — not an error, don't fall back or nag.
+      if ((err as Error)?.name === 'AbortError') return;
+      // Any other share failure: fall through to the copy path below.
+    }
+  }
+  setSeedHint((await copyText(link)) ? 'link copied' : 'clipboard blocked');
 });
 
 // ── global keyboard: spacebar plays/pauses ──────────────────────────
