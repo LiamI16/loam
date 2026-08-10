@@ -36,8 +36,10 @@ Shipped and confirmed on a real iPhone:
   fallback + a `newId()` UUID fallback, and `touch-action:none` on the range
   inputs so touch-drag adjusts them instead of scrolling. Seed box also accepts a
   pasted Loam permalink and extracts the integer (`parseSeedInput`).
-- **Share + tap/zoom polish** ✅ (2026-08-09) — the copy button becomes a native
-  **share** sheet where `navigator.share` exists (`main.ts`), falling back to
+- **Share + tap/zoom polish** ✅ (2026-08-09) — on touch devices the copy button
+  becomes a native **share** sheet (`main.ts`), else it stays copy. Gated on
+  `navigator.share` **and** a coarse primary pointer — desktops (incl. Windows
+  Chrome/Edge) expose `navigator.share` but open a clunky dialog, so they keep
   copy. `-webkit-tap-highlight-color:transparent` + `touch-action:manipulation`
   remove the grey tap flash and double-tap-zoom delay; 16px inputs on coarse
   pointers stop iOS zooming the viewport on focus.

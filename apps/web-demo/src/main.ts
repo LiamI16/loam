@@ -1025,11 +1025,15 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-// The share/copy button. Where the Web Share API exists (mobile, some
-// desktops), relabel it "share" and open the native share sheet — far easier
-// than copy → switch apps → paste on a phone. Everywhere else it stays "copy".
+// The share/copy button. On touch devices relabel it "share" and open the
+// native share sheet — far easier than copy → switch apps → paste on a phone.
+// Gate on a coarse *primary* pointer, not just navigator.share's existence:
+// desktops (incl. Windows Chrome/Edge) also expose navigator.share but open a
+// clunky share dialog, so they keep plain "copy". matchMedia('(pointer:coarse)')
+// is true on phones/tablets and false on mouse/trackpad desktops.
 const shareBtn = $<HTMLButtonElement>('copy');
-const canShare = typeof navigator.share === 'function';
+const canShare =
+  typeof navigator.share === 'function' && window.matchMedia('(pointer: coarse)').matches;
 if (canShare) shareBtn.textContent = 'share';
 shareBtn.addEventListener('click', async () => {
   // Share/copy a permalink, not the bare integer — the recipient gets a
