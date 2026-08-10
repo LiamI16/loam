@@ -948,21 +948,39 @@ function setSeedHint(text: string, autoRevertMs = 1500): void {
   }, autoRevertMs);
 }
 
+// Accept either a bare integer or a pasted Loam permalink — the copy button
+// yields a URL, and it's far easier for mobile users to paste that straight
+// into the seed box than to open it in a new tab. Pulls `seed=<digits>` out of
+// any URL/query string; otherwise parses the whole value as an integer.
+function parseSeedInput(raw: string): bigint | null {
+  const s = raw.trim();
+  if (!s) return null;
+  const m = s.match(/[?&]seed=([0-9]+)/) ?? s.match(/^seed=([0-9]+)$/);
+  const candidate = m?.[1] ?? s;
+  try {
+    return BigInt(candidate);
+  } catch {
+    return null;
+  }
+}
+
 // Commit whatever's typed in the seed box — fired on both Enter and blur
 // (clicking away), so there's no hidden "press Enter" requirement. Reseeds
 // only when the value actually changed; on an invalid entry, snaps the box
 // back to the current seed so it never lingers in a broken state.
 function commitSeed(): void {
-  const raw = seedInput.value.trim();
-  let parsed: bigint;
-  try {
-    parsed = BigInt(raw);
-  } catch {
-    setSeedHint('invalid · must be an integer');
+  const parsed = parseSeedInput(seedInput.value);
+  if (parsed === null) {
+    setSeedHint('invalid · number or loam link');
     seedInput.value = currentSeed.toString();
     return;
   }
-  if (parsed === currentSeed) return;
+  // Normalize the box to the bare integer even when a link was pasted (reseed
+  // does this via applySeed on change; do it here for the unchanged case too).
+  if (parsed === currentSeed) {
+    seedInput.value = currentSeed.toString();
+    return;
+  }
   void reseed(parsed);
 }
 
