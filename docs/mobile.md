@@ -185,8 +185,15 @@ Non-blocking niceties surfaced while hardening mobile. None gate launch.
   Screen) would surface the already-working PWA (manifest is complete). Part of
   M10.
 - **Two-column landscape layout** — landscape currently just reflows + scrolls
-  (functional, not elegant). A proper ember-beside-controls layout would use the
-  space better.
+  (functional, not elegant). **Design intent (maintainer, 2026-08-09):** when the
+  phone is rotated to landscape, lay the hero (ember) and the sliders **side by
+  side as two columns** — ember in one column, controls in the other — instead of
+  the single stacked column. Uses the wide-but-short viewport far better and
+  should remove the need to scroll in landscape.
+  - Open when picked up: where the **seed area + rain/vinyl toggles** live (under
+    the sliders column? beneath the ember? a third element?), and whether the
+    breakpoint keys off orientation or the existing `max-height` short-viewport
+    query. Settle before implementing.
 - **Long-press callout suppression** — `-webkit-touch-callout: none` on the ember
   (and other non-text controls) so a long-press doesn't raise the iOS
   selection/callout menu.
