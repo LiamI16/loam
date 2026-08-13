@@ -19,7 +19,7 @@ export default defineConfig(({ command }) => ({
       manifest: {
         name: 'Loam',
         short_name: 'Loam',
-        description: 'Offline, infinite, on-device generative lo-fi.',
+        description: 'Offline, infinite, on-device generative lofi.',
         theme_color: '#e8a35a',
         background_color: '#15100d',
         display: 'standalone',

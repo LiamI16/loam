@@ -1,7 +1,7 @@
 # Loam
 
 > Loam is a free, in-browser app that plays endless, never-repeating
-> lo-fi for focus. Runs entirely on your device — offline-capable, no
+> lofi for focus. Runs entirely on your device — offline-capable, no
 > accounts, no streaming, no ads.
 
 <table>
@@ -28,7 +28,7 @@ its own dock or home-screen icon. (See Quick Tour for per-platform
 steps.)
 
 > 🚧 **Coming soon — an Obsidian plugin.** The same engine, playing
-> endless focus lo-fi right inside your notes. In progress; ⭐ watch/star
+> endless focus lofi right inside your notes. In progress; ⭐ watch/star
 > the repo to hear when it lands.
 
 ## What is this?
@@ -141,7 +141,7 @@ The principles that shape every decision:
   default; discrete ornaments are the rare exception.
 - **Part of the job is masking** irregular environmental noise (chatter,
   HVAC, traffic). It's an acoustic blanket, not a composition.
-- **Pure synthesis.** Lo-fi character is produced procedurally
+- **Pure synthesis.** Lofi character is produced procedurally
   (saturation, filtering, noise beds, wow/flutter), not sampled. Keeps
   the "kilobytes-not-gigabytes" identity honest.
 - **Dynamics propose, music theory disposes.** Chaotic / noise sources
@@ -183,7 +183,7 @@ Out of scope (v1):
 - Not a general music app, not a DAW, not multi-genre, not a
   player/streamer.
 - No sample libraries, no ML, no cloud, no accounts.
-- Lo-fi only. Synthwave and ambient are deliberately later.
+- Lofi only. Synthwave and ambient are deliberately later.
 
 ### Documentation
 
@@ -225,7 +225,7 @@ If you'd like to engage with this repo directly:
   better as a fork.
 
 The rough split: **extending Loam** (a new piece slotting into the
-existing lo-fi engine) tends to land as a PR; **redirecting Loam** (a
+existing lofi engine) tends to land as a PR; **redirecting Loam** (a
 new genre engine, sample-based instruments, ML, big refactors) tends
 to be cleaner as a fork.
 
